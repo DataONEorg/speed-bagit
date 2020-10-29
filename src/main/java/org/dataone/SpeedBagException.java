@@ -1,4 +1,4 @@
-package org.example;
+package org.dataone;
 
 
 public class SpeedBagException extends Exception {

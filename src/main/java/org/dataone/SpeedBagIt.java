@@ -1,9 +1,6 @@
-package org.example;
+package org.dataone;
 
-// https://projectelectron.rockarch.org/rac-bagit-spec/
-// https://wikispaces.psu.edu/download/attachments/231670283/MetaArchiveBagItUsageInstructions.pdf?version=1&modificationDate=1410969194000&api=v2
 
-import java.lang.reflect.Array;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -17,25 +14,26 @@ import java.util.logging.Logger;
 import java.io.InputStream;
 import java.io.IOException;
 import java.io.ByteArrayInputStream;
+
 /**
  *
- * DEVNOTE: I only have this working for CRC32 checksums?
+ *
  */
-public class SpeedBag {
+public class SpeedBagIt {
     private final static Logger logger = Logger.getLogger("SpeedyBag");
 
     public int bagSize;
-    // Version the bag is (0.97, 1.0, etc)
+    // Version that the bag is (0.97, 1.0, etc)
     public double version;
-    // Contents of tagmanifest-{algo}.txt
+    // Contents of tagmanifest-{algo}.txt file
     public String tagManifestFile;
-    // Contents of manifest-{algo}.txt
+    // Contents of manifest-{algo}.txt file
     public String dataManifestFile;
     // Contents of bag-info.txt
     public String bagInfoFile;
     // Contents of bagit.txt
     public String bagitFile;
-    // The name of the algorithm. Should be compatible with org.dataone.service.types.v1.Checksum
+    // The name of the algorithm. Should be compatible with the MessageDigest class
     public String checksumAlgorithm;
     public int payloadOxum;
 
@@ -43,13 +41,13 @@ public class SpeedBag {
     private List<SpeedFile> dataFiles;
     private List<SpeedFile> tagFiles;
 
-
     /**
+     * Creates a new instance of a SpeedBagIt
      * @param version:           The bag version (0.97, 1.0, etc)
      * @param checksumAlgorithm: The name of the algorithm used to checksum the files
      * @param bagitMetadata:     An optional key-value mapping of metadata that belongs in bagit.txt.
      */
-    public SpeedBag(double version,
+    public SpeedBagIt(double version,
                     String checksumAlgorithm,
                     Map<String, String> bagitMetadata) throws SpeedBagException, NoSuchAlgorithmException {
         //logger.info("Creating SpeedyBag instance");

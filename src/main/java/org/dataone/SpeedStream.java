@@ -1,11 +1,11 @@
-package org.example;
+package org.dataone;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.MessageDigest;
 
 /**
- * A stream that computes the checksum and size of a streaming object.
+ * A stream that computes the checksum and size of an object as it streams.
  *
  */
 public class SpeedStream extends FilterInputStream {
@@ -13,6 +13,13 @@ public class SpeedStream extends FilterInputStream {
     private MessageDigest cksum;
     private int size;
 
+    /**
+     * Constructs a new SpeedStream object
+     *
+     * @param in The stream t
+     * @param sum A MessageDigest that is updated as the stream is streamed
+     *
+     */
     public SpeedStream(InputStream in, MessageDigest sum) {
         super(in);
         this.cksum = sum;
@@ -60,10 +67,18 @@ public class SpeedStream extends FilterInputStream {
         return len;
     }
 
+    /**
+     * Returns the number of bytes that were streamed
+     * @return The number of bytes streamed
+     */
     public int getSize() {
         return size;
     }
 
+    /**
+     *
+     * @return The checksum of the streamed bytes
+     */
     public byte[] getChecksum() {
         return this.cksum.digest();
     }

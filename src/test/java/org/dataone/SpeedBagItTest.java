@@ -1,17 +1,12 @@
-package org.example;
-import org.example.SpeedBagException;
-import org.example.SpeedBag;
-
+package org.dataone;
 import org.junit.Test;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
-import java.security.KeyException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.logging.Logger;
 import java.util.zip.ZipOutputStream;
 
 import static org.junit.Assert.*;
@@ -19,10 +14,10 @@ import static org.junit.Assert.*;
 /**
  * Unit test for simple App.
  */
-public class AppTest
+public class SpeedBagItTest
 {
     /**
-     * Rigorous Test :-)
+     *
      */
     @Test
     public void testCtor()
@@ -41,9 +36,9 @@ public class AppTest
         bagMetadata.put("Contact-Email", contactEmail);
         bagMetadata.put("External-Identifier", externalIdentifier);
 
-        SpeedBag bag = null;
+        SpeedBagIt bag = null;
         try {
-            bag = new SpeedBag(bagVersion, checksumAlgorithm, bagMetadata);
+            bag = new SpeedBagIt(bagVersion, checksumAlgorithm, bagMetadata);
             assertEquals(bag.version, bagVersion, 0.0);
             assertEquals(bag.checksumAlgorithm, checksumAlgorithm);
             // Confirm the bagit.txt file has been created
@@ -76,10 +71,10 @@ public class AppTest
         String checksumAlgorithm = "MD5";
         Map<String, String> bagMetadata = new HashMap<>();
 
-        SpeedBag bag = null;
+        SpeedBagIt bag = null;
 
         try {
-            bag = new SpeedBag(bagVersion, checksumAlgorithm, bagMetadata);
+            bag = new SpeedBagIt(bagVersion, checksumAlgorithm, bagMetadata);
             String dataFile = "1234, 9876, 3845";
             InputStream fileStream = new ByteArrayInputStream(dataFile.getBytes(StandardCharsets.UTF_8));
             bag.addFile(fileStream, "data/data_file.csv", MessageDigest.getInstance("MD5"), false);
@@ -103,28 +98,47 @@ public class AppTest
         String expectedSHA512 = "c9103f375fcd172e7d80967bfe961c20ab8c77d09860fa2581b47ae13e1fbb91" +
                 "ed9d701fd2a3a57da66722ba3996f4bc382273d5896fcd9fe96d8fcf236a2f45";
 
-        SpeedBag bag = null;
+        SpeedBagIt bag = null;
         double bagVersion = 1.0;
         Map<String, String> bagMetadata = new HashMap<>();
 
         try {
             String checksumAlgorithm = "SHA-1";
-            bag = new SpeedBag(bagVersion, checksumAlgorithm, bagMetadata);
+            bag = new SpeedBagIt(bagVersion, checksumAlgorithm, bagMetadata);
             // assertEquals(checksum, expectedSHA1);
 
             checksumAlgorithm = "SHA-256";
-            bag = new SpeedBag(bagVersion, checksumAlgorithm, bagMetadata);
+            bag = new SpeedBagIt(bagVersion, checksumAlgorithm, bagMetadata);
             // assertEquals(checksum, expectedSHA256);
 
             checksumAlgorithm = "SHA-512";
-            bag = new SpeedBag(bagVersion, checksumAlgorithm, bagMetadata);
+            bag = new SpeedBagIt(bagVersion, checksumAlgorithm, bagMetadata);
             // assertEquals(checksum, expectedSHA512);
         } catch (SpeedBagException | NoSuchAlgorithmException e) {
             fail();
         }
+    }
 
+    /**
+     * Test that NoSuchAlgorithmException is thrown when a user tries to use an unsupported
+     * checksum algorithm.
+     */
+    @Test
+    public void testInvalidChecksum() {
 
+        SpeedBagIt bag = null;
+        double bagVersion = 1.0;
+        Map<String, String> bagMetadata = new HashMap<>();
 
+        try {
+            String checksumAlgorithm = "SHA-1234";
+            new SpeedBagIt(bagVersion, checksumAlgorithm, bagMetadata);
 
+        } catch (NoSuchAlgorithmException e) {
+            // Should get here
+        } catch (SpeedBagException e) {
+            // Shouldn't get here
+            fail();
+        }
     }
 }
