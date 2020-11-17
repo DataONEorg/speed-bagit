@@ -1,4 +1,4 @@
-package org.dataone;
+package org.dataone.speedbagit;
 
 import org.junit.Test;
 
@@ -9,7 +9,6 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
 import static org.junit.Assert.*;
-import static org.junit.Assert.fail;
 
 public class SpeedFileTest {
 
