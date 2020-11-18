@@ -1,4 +1,4 @@
-package org.dataone;
+package org.dataone.speedbagit;
 
 public class SpeedFile {
     private String bagPath;

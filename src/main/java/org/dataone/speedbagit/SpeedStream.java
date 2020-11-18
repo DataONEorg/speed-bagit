@@ -1,4 +1,4 @@
-package org.dataone;
+package org.dataone.speedbagit;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;

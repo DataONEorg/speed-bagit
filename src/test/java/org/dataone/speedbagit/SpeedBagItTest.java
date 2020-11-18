@@ -1,4 +1,4 @@
-package org.dataone;
+package org.dataone.speedbagit;
 import org.junit.Test;
 
 import java.io.*;
