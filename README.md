@@ -1,13 +1,13 @@
 # SpeedBagIt
-[![Build Status](https://travis-ci.org/NCEAS/eml.svg?branch=master)](https://travis-ci.org/NCEAS/eml)
+[![Build Status](https://travis-ci.com/DataONEorg/speed-bagit.svg?branch=main)](https://travis-ci.com/DataONEorg/speed-bagit)
 
 - **Authors**: Thomas Thelen ([NCEAS](http://www.nceas.ucsb.edu))
 - **License**: [Apache 2](http://opensource.org/licenses/Apache-2.0)
-- [**Submit Bugs and feature requests**](https://github.com/DataONEorg/rdataone/issues)
+- [**Submit Bugs and feature requests**](https://github.com/DataONEorg/speed-bagit/issues)
 
 A fast, minimal BagIt library that serves bags without touching the filesystem. Ever.
 This library was designed for servers serving zip files that conform 
-to the BagIt specification. This is unique to other BagIt libraries in that it doesn't 
+to the BagIt specification. This differs from other BagIt libraries in that it doesn't 
 create a temporary zip file of the bag on disk. Instead, it performs checksumming and size calculations 
 on the fly _as the bag is being served_. This avoids unnecessarily copying data files to disk which 
 is a common bottleneck for delivering content.
@@ -102,6 +102,6 @@ Work on this package was supported by:
 
 Additional support was provided for working group collaboration by the National Center for Ecological Analysis and Synthesis, a Center funded by the University of California, Santa Barbara, and the State of California.
 
-[![nceas_footer](https://live-ncea-ucsb-edu-v01.pantheonsite.io/sites/default/files/2020-03/NCEAS-full%20logo-4C.png)](http://www.nceas.ucsb.edu)
+[![nceas_footer](https://www.nceas.ucsb.edu/sites/default/files/2020-03/NCEAS-full%20logo-4C.png)](http://www.nceas.ucsb.edu)
 
 [![dataone_footer](https://www.dataone.org/sites/all/images/DataONE_LOGO.jpg)](http://dataone.org)
