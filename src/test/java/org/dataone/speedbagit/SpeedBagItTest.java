@@ -1,5 +1,4 @@
 package org.dataone.speedbagit;
-import org.junit.Test;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -9,7 +8,10 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.zip.ZipOutputStream;
 
-import static org.junit.Assert.*;
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * Unit test for simple App.
