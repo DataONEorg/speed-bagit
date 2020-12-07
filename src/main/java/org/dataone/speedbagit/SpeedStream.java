@@ -4,15 +4,23 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.security.MessageDigest;
 
+
+import org.apache.commons.codec.binary.Hex;
 /**
  * A stream that computes the checksum and size of an object as it streams.
  *
  */
 public class SpeedStream extends FilterInputStream {
 
-    private MessageDigest cksum;
+    // The object that holds the checksum state & performs checksumming
+    private MessageDigest digest;
+    // The checksum of the object that was streamed
+    private String checksum;
+    // The number of bytes streamed
     private int size;
-
+    // Set to true when the checksum has been set. MessageDigest always has a digest, so it's
+    // impossible to tell whether it's been set or not
+    private boolean checksumSet;
     /**
      * Constructs a new SpeedStream object
      *
@@ -22,8 +30,13 @@ public class SpeedStream extends FilterInputStream {
      */
     public SpeedStream(InputStream in, MessageDigest sum) {
         super(in);
-        this.cksum = sum;
+        this.digest = sum;
+        this.checksum = "";
         this.size = 0;
+
+        // Reset the MessageDigest's state
+        this.digest.reset();
+        this.checksumSet = false;
     }
 
     /**
@@ -35,9 +48,12 @@ public class SpeedStream extends FilterInputStream {
     public int read() throws IOException {
         int b = in.read();
         if (b != -1) {
-            this.cksum.update((byte) b);
+            this.digest.update((byte) b);
+            this.checksumSet = true;
             this.size += 1;
         }
+        byte[] checksum = this.digest.digest();
+        this.checksum = Hex.encodeHexString(checksum);
         return b;
     }
 
@@ -60,10 +76,12 @@ public class SpeedStream extends FilterInputStream {
     public int read(byte[] buf, int off, int len) throws IOException {
         len = in.read(buf, off, len);
         if (len != -1) {
-            this.cksum.update(buf, off, len);
-            // DEVNOTE: This is incorrect; this adds the *maximum* number of bytes read
+            this.digest.update(buf, off, len);
+            this.checksumSet = true;
             this.size += len;
         }
+        byte[] checksum = this.digest.digest();
+        this.checksum = Hex.encodeHexString(checksum);
         return len;
     }
 
@@ -76,10 +94,14 @@ public class SpeedStream extends FilterInputStream {
     }
 
     /**
+     * Returns the checksum of the stream.
+     *
+     * Converts cksum.digest (byte[]) to a String. Since this is a checksum,
+     * it should take up minimal space in memory.
      *
      * @return The checksum of the streamed bytes
      */
-    public byte[] getChecksum() {
-        return this.cksum.digest();
+    public String getChecksum() {
+        return this.checksum;
     }
 }
