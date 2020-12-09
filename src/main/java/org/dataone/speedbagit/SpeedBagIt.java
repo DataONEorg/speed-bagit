@@ -4,10 +4,9 @@ package org.dataone.speedbagit;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.List;
-import java.util.Map;
-import java.util.Calendar;
-import java.util.ArrayList;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import java.util.logging.Logger;
@@ -20,7 +19,7 @@ import java.io.ByteArrayInputStream;
  *
  */
 public class SpeedBagIt {
-    private final static Logger logger = Logger.getLogger("SpeedyBag");
+    private final static Logger logger = Logger.getLogger("SpeedBagIt");
 
     public int bagSize;
     // Version that the bag is (0.97, 1.0, etc)
@@ -29,42 +28,51 @@ public class SpeedBagIt {
     public String tagManifestFile;
     // Contents of manifest-{algo}.txt file
     public String dataManifestFile;
-    // Contents of bag-info.txt
-    public String bagInfoFile;
-    // Contents of bagit.txt
-    public String bagitFile;
     // The name of the algorithm. Should be compatible with the MessageDigest class
     public String checksumAlgorithm;
-    public int payloadOxum;
+    // Map of key-values that go in the bagit.txt file
+    public Map<String, String> bagitMetadata;
 
     // A list holding all of the files in the bag
     private List<SpeedFile> dataFiles;
     private List<SpeedFile> tagFiles;
 
     /**
-     * Creates a new instance of a SpeedBagIt
+     * Creates a new instance of a SpeedBagIt. This constructor supports adding
+     * additional metadata to the bagit.txt file, when created.
      * @param version:           The bag version (0.97, 1.0, etc)
      * @param checksumAlgorithm: The name of the algorithm used to checksum the files
-     * @param bagitMetadata:     An optional key-value mapping of metadata that belongs in bagit.txt.
+     * @param bagitMetadata:     A key-value mapping of metadata that belongs in bagit.txt
      */
     public SpeedBagIt(double version,
                     String checksumAlgorithm,
-                    Map<String, String> bagitMetadata) throws SpeedBagException, NoSuchAlgorithmException {
+                    Map<String, String> bagitMetadata) {
         //logger.info("Creating SpeedyBag instance");
         this.version = version;
-        this.payloadOxum = 0;
         this.checksumAlgorithm = checksumAlgorithm;
         this.dataFiles = new ArrayList<>();
         this.tagFiles = new ArrayList<>();
-
-        // Create the bagit.txt file
-        this.generateBagitTxt(bagitMetadata);
-        // Add a stream to bagit.txt and its full path to the bag
-        InputStream fileStream = new ByteArrayInputStream(this.bagitFile.getBytes(StandardCharsets.UTF_8));
-        this.addFile(fileStream, "bagit.txt", MessageDigest.getInstance(checksumAlgorithm), true);
-        this.bagInfoFile = String.format("Bagging-Date: %s\n", Calendar.getInstance().getTime().toString());
+        this.bagitMetadata = bagitMetadata;
+        this.dataManifestFile="";
+        this.tagManifestFile="";
     }
 
+    /**
+     * Creates a new SpeedBagIt object. This constructor requires the bare
+     * minimum arguments to make a valid bag.
+     * @param version:           The bag version (0.97, 1.0, etc)
+     * @param checksumAlgorithm: The name of the algorithm used to checksum the files
+     */
+    public SpeedBagIt(double version,
+                      String checksumAlgorithm) {
+        this.version = version;
+        this.checksumAlgorithm = checksumAlgorithm;
+        this.dataFiles = new ArrayList<>();
+        this.tagFiles = new ArrayList<>();
+        this.bagitMetadata = new HashMap<> ();
+        this.dataManifestFile="";
+        this.tagManifestFile="";
+    }
 
     /**
      * Adds a stream of data to the bag.
@@ -85,23 +93,52 @@ public class SpeedBagIt {
     }
 
     /**
-     * Generates a bagit.txt file.
+     * Generates at the least, a valid bagit.txt file. Additional parameters
+     * are added to the file through `this.bagitMetadata`.
      *
-     * @param bagitMetadata: A map of key-values that will be placed in the file as key: value
      */
-    public void generateBagitTxt(Map<String, String> bagitMetadata) {
-        for (Map.Entry<String, String> entry : bagitMetadata.entrySet()) {
-            //logger.info(String.format("Adding %s %s to the bagit.txt file", entry.getKey(), entry.getValue()));
-            if(this.bagitFile != null) {
-                this.bagitFile = String.format("%s%s: %s\n", this.bagitFile, entry.getKey(), entry.getValue());
+    public String generateBagitTxt() {
+        String bagitFile = "";
+        for (Map.Entry<String, String> entry : this.bagitMetadata.entrySet()) {
+            if(bagitFile != null) {
+                bagitFile = String.format("%s%s: %s\n", bagitFile, entry.getKey(), entry.getValue());
             } else {
-                this.bagitFile = String.format("%s: %s\n", entry.getKey(), entry.getValue());
+                bagitFile = String.format("%s: %s\n", entry.getKey(), entry.getValue());
             }
         }
-        this.bagitFile = String.format("%sBagIt-Version: %s\n", this.bagitFile, version);
-        this.bagitFile = String.format("%sTag-File-Character-Encoding: UTF-8\n", this.bagitFile);
+        bagitFile = String.format("%sBagIt-Version: %s\n", bagitFile, version);
+        bagitFile = String.format("%sTag-File-Character-Encoding: UTF-8\n", bagitFile);
+        return bagitFile;
     }
 
+    /**
+     * Takes a size and returns B, KB, Mb, GB, etc. Taken from
+     * https://stackoverflow.com/questions/3758606/how-can-i-convert-byte-size-into-a-human-readable-format-in-java
+     * @param size: The size being converted
+     * @return The size as 5 KB, 1 GB, etc
+     */
+    public static String formatSize(long size) {
+        if (size < 1024) return size + " B";
+        int z = (63 - Long.numberOfLeadingZeros(size)) / 10;
+        return String.format("%.1f %sB", (double)size / (1L << (z*10)), " KMGTPE".charAt(z));
+    }
+
+    /**
+     *  Generates the bag-info.txt file contents
+     *
+     * @param payloadOxum The payload oxum of the bag
+     * @param bagSize: The size of the bag
+     * @return A text string with the file contents
+     */
+    public String generateBagInfoTxt(String payloadOxum, int bagSize) {
+
+        LocalDateTime dateTime = LocalDateTime.now();
+        DateTimeFormatter formmat1 = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ENGLISH);
+        String bagInfo = String.format("Bagging-Date: %s\n", formmat1.format(dateTime));
+        bagInfo = String.format("%sPayload-Oxum: %s\n", bagInfo, payloadOxum);
+        bagInfo = String.format("%sBag-Size: %s\n", bagInfo, formatSize(bagSize));
+        return bagInfo;
+    }
 
     /**
      * Writes a line to the tag manifest file
@@ -125,7 +162,7 @@ public class SpeedBagIt {
      * @param checksum: The checksum of the file
      */
     public void writeToDataManifest(String path, String checksum) {
-        if(this.dataManifestFile != null) {
+        if(!this.dataManifestFile.equals("")) {
             this.dataManifestFile += String.format("%s %s\n", path, checksum);
         } else
         {
@@ -133,84 +170,73 @@ public class SpeedBagIt {
         }
     }
 
-
-    /**
-     * @param zos: The output stream that represents the streaming bag
-     * @throws IOException
-     */
-    public void stream(ZipOutputStream zos)
-            throws IOException, NoSuchAlgorithmException {
-
-        logger.info("stream called!");
-        for (SpeedFile streamingFile : this.dataFiles) {
-            logger.info(String.format("Preparing to write %s", streamingFile.getPath()));
+    private void streamFile(ZipOutputStream zos, SpeedFile streamingFile) throws IOException {
+        try {
             ZipEntry entry = new ZipEntry(streamingFile.getPath());
             zos.putNextEntry(entry);
 
             SpeedStream fileStream = streamingFile.getStream();
             fileStream.transferTo(zos);
-
-            String checksum = new String(streamingFile.getStream().getChecksum());
-            logger.info(checksum);
-            logger.info(String.valueOf(streamingFile.getStream().getSize()));
-            this.writeToDataManifest(streamingFile.getPath(), checksum);
-            this.payloadOxum += streamingFile.getStream().getSize();
+        } finally {
             zos.closeEntry();
         }
+    }
 
-        // Now that payload-oxum is computed, add it to the bag-info.txt file
-        this.bagInfoFile = String.format("%spayload-oxum: %s\n", this.bagInfoFile, payloadOxum);
-        InputStream fileStream = new ByteArrayInputStream(this.bagInfoFile.getBytes(StandardCharsets.UTF_8));
-        this.addFile(fileStream, "bag-info.txt", MessageDigest.getInstance("MD5"), true);
+    /**
+     * @param zos: The output stream that represents the streaming bag
+     * @throws IOException Throws when something went wrong with streaming the bag
+     * @throws NoSuchAlgorithmException Thrown when an unsupported checksum algorithm is used
+     */
+    public void stream(ZipOutputStream zos)
+            throws IOException, NoSuchAlgorithmException {
+        int totalSize = 0;
+        // Stream all of the files in the root 'data' directory
+        for (SpeedFile streamingFile : this.dataFiles) {
+            this.streamFile(zos, streamingFile);
+
+            String checksum = new String(streamingFile.getStream().getChecksum());
+            this.writeToDataManifest(streamingFile.getPath(), checksum);
+            totalSize += streamingFile.getStream().getSize();
+        }
+        String payloadOxum =  String.format("%s.%s",totalSize, this.dataFiles.size());
+        // Generate and add the bagit.txt file
+        InputStream bagTextStream = new ByteArrayInputStream(this.generateBagitTxt().getBytes(StandardCharsets.UTF_8));
+        this.addFile(bagTextStream, "bagit.txt", MessageDigest.getInstance(checksumAlgorithm), true);
+
+
+        // Generate and add the bag-info.txt file
+        String bagInfoFile = generateBagInfoTxt(payloadOxum, totalSize);
+        InputStream fileStream = new ByteArrayInputStream(bagInfoFile.getBytes(StandardCharsets.UTF_8));
+        this.addFile(fileStream, "bag-info.txt", MessageDigest.getInstance(checksumAlgorithm), true);
+
+        // Generate and add the data manifest file
         String fileName = String.format("manifest-%s.txt", this.checksumAlgorithm);
         fileStream = new ByteArrayInputStream(this.dataManifestFile.getBytes(StandardCharsets.UTF_8));
-        this.addFile(fileStream, fileName, MessageDigest.getInstance("MD5"), true);
+        this.addFile(fileStream, fileName, MessageDigest.getInstance(checksumAlgorithm), true);
 
         // Write all of the tag files
         for (SpeedFile streamingFile : this.tagFiles) {
-            ZipEntry entry = new ZipEntry(streamingFile.getPath());
-            zos.putNextEntry(entry);
-
-            fileStream = streamingFile.getStream();
-            fileStream.transferTo(zos);
-
+            this.streamFile(zos, streamingFile);
             String checksum = new String(streamingFile.getStream().getChecksum());
             this.writeToTagManifest(streamingFile.getPath(), checksum);
-            this.payloadOxum += streamingFile.getStream().getSize();
-            zos.closeEntry();
         }
 
-        // Write the tag-manifest
+        // Create the SpeedFile and stream it
         fileStream = new ByteArrayInputStream(this.tagManifestFile.getBytes(StandardCharsets.UTF_8));
-        //this.addFile(fileStream, "tagmanifest-md5.txt", MessageDigest.getInstance("MD5"), true);
         fileName = String.format("tagmanifest-%s.txt", this.checksumAlgorithm);
-        SpeedFile newFile = new SpeedFile(new SpeedStream(fileStream,  MessageDigest.getInstance(this.checksumAlgorithm)), fileName, true);
-
-        ZipEntry entry = new ZipEntry(newFile.getPath());
-        zos.putNextEntry(entry);
-        fileStream = newFile.getStream();
-        fileStream.transferTo(zos);
-        zos.closeEntry();
+        SpeedFile tagManifestStreamFile = new SpeedFile(new SpeedStream(fileStream,
+                MessageDigest.getInstance(this.checksumAlgorithm)), fileName, true);
+        this.streamFile(zos, tagManifestStreamFile);
 
         zos.close();
     }
 
-
-    public String checksum(String content) throws SpeedBagException {
-        MessageDigest digest;
-        try {
-            digest = MessageDigest.getInstance(this.checksumAlgorithm);
-        } catch (NoSuchAlgorithmException e) {
-            throw new SpeedBagException("Failed to get an instance of the checksummer. Please ensure that" +
-                    "the checksum supplied is listed in the Java Security Standard Algorithm Names", e);
-        }
-        byte[] hash;
-        // Go ahead and checksum the file
-        hash = digest.digest(content.getBytes(StandardCharsets.UTF_8));
-        if (hash != null) {
-            return new String(hash, StandardCharsets.UTF_8);
-        }
-        return null;
+    /**
+     * Returns the number of data files in the bag
+     * @return The number of data files
+     */
+    public int getPayloadFileCount() {
+        return this.dataFiles.size();
     }
 
 }
