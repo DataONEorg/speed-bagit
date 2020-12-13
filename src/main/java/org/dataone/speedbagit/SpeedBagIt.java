@@ -15,13 +15,16 @@ import java.io.IOException;
 import java.io.ByteArrayInputStream;
 
 /**
- *
+ *  The main interface for creating a BagIt compliant zip file. The SpeedBagIt class
+ *  manages SpeedFile objects, which represent files that will be written to the output
+ *  stream.
+ *  This class is also responsible for generating the tagmangifest and manfiest files along
+ *  with the default BagIt files: bagit.txt & bag-info.txt.
  *
  */
 public class SpeedBagIt {
     private final static Logger logger = Logger.getLogger("SpeedBagIt");
 
-    public int bagSize;
     // Version that the bag is (0.97, 1.0, etc)
     public double version;
     // Contents of tagmanifest-{algo}.txt file
@@ -47,7 +50,6 @@ public class SpeedBagIt {
     public SpeedBagIt(double version,
                     String checksumAlgorithm,
                     Map<String, String> bagitMetadata) {
-        //logger.info("Creating SpeedyBag instance");
         this.version = version;
         this.checksumAlgorithm = checksumAlgorithm;
         this.dataFiles = new ArrayList<>();
@@ -77,9 +79,9 @@ public class SpeedBagIt {
     /**
      * Adds a stream of data to the bag.
      *
-     * @param file:      The stream representing a file or data that will be placed in the bag
-     * @param bagPath:      The path, relative to the bag root where the file belongs
-     * @param checksum:
+     * @param file: The stream representing a file or data that will be placed in the bag
+     * @param bagPath: The path, relative to the bag root where the file belongs
+     * @param checksum: A MessageDigest object of the desired file checksum
      * @param isTagFile: Boolean set to True when the file is a tag file
      */
     public void addFile(InputStream file, String bagPath, MessageDigest checksum, boolean isTagFile) {
@@ -93,9 +95,10 @@ public class SpeedBagIt {
     }
 
     /**
-     * Generates at the least, a valid bagit.txt file. Additional parameters
-     * are added to the file through `this.bagitMetadata`.
+     * Generates a valid bagit.txt file. Additional parameters
+     * can be added to the file through `this.bagitMetadata`.
      *
+     * @return A string representing the bagit.txt file.
      */
     public String generateBagitTxt() {
         String bagitFile = "";
@@ -115,7 +118,7 @@ public class SpeedBagIt {
      * Takes a size and returns B, KB, Mb, GB, etc. Taken from
      * https://stackoverflow.com/questions/3758606/how-can-i-convert-byte-size-into-a-human-readable-format-in-java
      * @param size: The size being converted
-     * @return The size as 5 KB, 1 GB, etc
+     * @return The size as 5 B, 5 KB, 5 GB, etc
      */
     public static String formatSize(long size) {
         if (size < 1024) return size + " B";
@@ -124,7 +127,7 @@ public class SpeedBagIt {
     }
 
     /**
-     *  Generates the bag-info.txt file contents
+     *  Generates the bag-info.txt file contents.
      *
      * @param payloadOxum The payload oxum of the bag
      * @param bagSize: The size of the bag
@@ -141,7 +144,8 @@ public class SpeedBagIt {
     }
 
     /**
-     * Writes a line to the tag manifest file
+     * Writes a line to the tag manifest file. The line conforms to the
+     * <path> <checksum> format specified by BagIt.
      *
      * @param path:     The path the the file, relative to the bag root
      * @param checksum: The checksum of the file
@@ -156,7 +160,8 @@ public class SpeedBagIt {
     }
 
     /**
-     * Writes a line to the manifest file describing the data files
+     * Writes a line to the manifest file describing the data files. The line conforms to the
+     * "<path> <checksum>" format specified by BagIt.
      *
      * @param path:     The path the the file, relative to the bag root
      * @param checksum: The checksum of the file
@@ -183,6 +188,9 @@ public class SpeedBagIt {
     }
 
     /**
+     * Writes the files to a stream under the BagIt specification. The manifest, bagit.txt,
+     * and bag.info are generated inside.
+     *
      * @param zos: The output stream that represents the streaming bag
      * @throws IOException Throws when something went wrong with streaming the bag
      * @throws NoSuchAlgorithmException Thrown when an unsupported checksum algorithm is used
@@ -233,6 +241,7 @@ public class SpeedBagIt {
 
     /**
      * Returns the number of data files in the bag
+     *
      * @return The number of data files
      */
     public int getPayloadFileCount() {
