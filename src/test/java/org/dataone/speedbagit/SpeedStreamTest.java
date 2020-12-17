@@ -27,8 +27,6 @@ public class SpeedStreamTest {
 
         // Make sure that the size always starts at 0
         assertEquals(speedStream.getSize(), 0);
-        // Make sure that the digest doesn't exist
-        assertEquals("", speedStream.getChecksum());
     }
 
     /**
@@ -55,10 +53,6 @@ public class SpeedStreamTest {
         assertEquals(expectedSHA1, speedStream.getChecksum());
         // Check that the SpeedStream size is correct
         assertEquals(testData.length(), speedStream.getSize());
-        // Check that the SpeedStream size matches the size of the result
-        assertEquals(result.toString().length(), testData.length());
-        // Check that all of the data was read
-        assertEquals(testData, result.toString());
     }
 
     /**
@@ -87,7 +81,5 @@ public class SpeedStreamTest {
         assertEquals(testData.length(), speedStream.getSize());
         // Check that the SpeedStream size matches the size of the result
         assertEquals(result.toString().length(), testData.length());
-        // Check that all of the data was read
-        assertEquals(testData, result.toString());
     }
 }
