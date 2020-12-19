@@ -11,6 +11,10 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.zip.ZipFile;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.zip.ZipOutputStream;
 import java.util.zip.ZipEntry;
 
@@ -93,6 +97,40 @@ public class SpeedBagItTest {
     /**
      * Test that the constructor is properly preserving input and
      * inserting the correct properties into the bag metadata file.
+     * Helper method that creates a stock Bag
+     * @return The SpeedBag object
+     */
+    public SpeedBagIt getStockBag() throws SpeedBagException, NoSuchAlgorithmException {
+        double bagVersion = 1.0;
+        String checksumAlgorithm = "MD5";
+        Map<String, String> bagMetadata = new HashMap<>();
+
+        SpeedBagIt bag = null;
+
+        bag = new SpeedBagIt(bagVersion, checksumAlgorithm, bagMetadata);
+
+        // Create & add data files
+        String dataFile1 = "1234, 9876, 3845";
+        String dataFile2 = "trees, cars, bridges";
+        InputStream dataFile1Stream = new ByteArrayInputStream(dataFile1.getBytes(StandardCharsets.UTF_8));
+        InputStream dataFile2Stream = new ByteArrayInputStream(dataFile2.getBytes(StandardCharsets.UTF_8));
+        bag.addFile(dataFile1Stream, "data/data_file1.csv", false);
+        bag.addFile(dataFile2Stream, "data/data_file2.csv", false);
+
+        // Create and add the tag files
+        String fetchFile = "someURI, somePath";
+        String metadataFile = "extra metadata";
+        InputStream fetchFile1Stream = new ByteArrayInputStream(fetchFile.getBytes(StandardCharsets.UTF_8));
+        InputStream metadataFile2Stream = new ByteArrayInputStream(metadataFile.getBytes(StandardCharsets.UTF_8));
+        bag.addFile(fetchFile1Stream, "./fetch.txt", true);
+        bag.addFile(metadataFile2Stream, "metadata/metadata.csv", true);
+
+        return bag;
+    }
+
+    /**
+     * Test that the constructor is setting the right parameters.
+>>>>>>> Stashed changes
      */
     @Test
     public void testCtor() {
@@ -193,6 +231,7 @@ public class SpeedBagItTest {
 
     /**
      * Tests that a bag can be created without a payload
+     * Test that the bag properly exports
      */
     @Test
     public void testEmptyBag() throws IOException {
@@ -225,7 +264,51 @@ public class SpeedBagItTest {
 
     /**
      * Tests a case where the bag only has files in the data directory.
+     *
+     * Test that streams are correctly added.
      */
+    @Test
+    public void testAddFile() throws SpeedBagException, NoSuchAlgorithmException {
+
+        // Keep track of the locations where the files should go so that
+        // the bag can be tested against them
+        List<String> expectedDataPaths = new ArrayList<>();
+        expectedDataPaths.add("data/data_file1.csv");
+        expectedDataPaths.add("data/data_file2.csv");
+
+        List<String> expecteMetadataPaths = new ArrayList<>();
+        expecteMetadataPaths.add("./fetch.txt");
+        expecteMetadataPaths.add("metadata/metadata.csv");
+
+
+        SpeedBagIt bag = getStockBag();
+        List<SpeedFile> dataFiles = bag.getDataFiles();
+        assert dataFiles.size() == 2;
+        for (SpeedFile dataFile: dataFiles) {
+            assert expectedDataPaths.contains(dataFile.getPath());
+        }
+
+        List<SpeedFile> metadataFiles = bag.getTagFiles();
+        assert metadataFiles.size() == 2;
+        for (SpeedFile tagFile: metadataFiles) {
+            assert expecteMetadataPaths.contains(tagFile.getPath());
+        }
+    }
+
+    @Test
+    public void testGetDataFiles() throws SpeedBagException, NoSuchAlgorithmException {
+        SpeedBagIt bag = getStockBag();
+        List<SpeedFile> dataFiles = bag.getDataFiles();
+        assert dataFiles.size() == 2;
+    }
+
+    @Test
+    public void testGetTagFiles() throws SpeedBagException, NoSuchAlgorithmException {
+        SpeedBagIt bag = getStockBag();
+        List<SpeedFile> metadataFiles = bag.getTagFiles();
+        assert metadataFiles.size() == 2;
+    }
+
     @Test
     public void testDataBagExport() {
         double bagVersion = 1.0;

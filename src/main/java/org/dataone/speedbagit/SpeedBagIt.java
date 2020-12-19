@@ -79,9 +79,9 @@ public class SpeedBagIt {
     /**
      * Adds a stream of data to the bag.
      *
-     * @param file: The stream representing a file or data that will be placed in the bag
-     * @param bagPath: The path, relative to the bag root where the file belongs
-     * @param checksum: A MessageDigest object of the desired file checksum
+     * @param file:      The stream representing a file or data that will be placed in the bag
+     * @param bagPath:      The path, relative to the bag root where the file belongs
+     * @param checksum: A MessageDigest object that will hold the checksum
      * @param isTagFile: Boolean set to True when the file is a tag file
      */
     public void addFile(InputStream file, String bagPath, MessageDigest checksum, boolean isTagFile) {
@@ -97,6 +97,24 @@ public class SpeedBagIt {
     /**
      * Generates a valid bagit.txt file. Additional parameters
      * can be added to the file through `this.bagitMetadata`.
+     * Adds a stream of data to the bag.
+     *
+     * @param file:      The stream representing a file or data that will be placed in the bag
+     * @param bagPath:      The path, relative to the bag root where the file belongs
+     * @param isTagFile: Boolean set to True when the file is a tag file
+     */
+    public void addFile(InputStream file, String bagPath, boolean isTagFile) throws NoSuchAlgorithmException {
+        MessageDigest newDigest = MessageDigest.getInstance(this.checksumAlgorithm);
+        SpeedFile newFile = new SpeedFile(new SpeedStream(file, newDigest), bagPath, isTagFile);
+        if (isTagFile) {
+            this.tagFiles.add(newFile);
+        } else {
+            this.dataFiles.add(newFile);
+        }
+    }
+
+    /**
+     * Generates a bagit.txt file.
      *
      * @return A string representing the bagit.txt file.
      */
@@ -247,5 +265,21 @@ public class SpeedBagIt {
     public int getPayloadFileCount() {
         return this.dataFiles.size();
     }
+    /**
+     * Returns all of the tag files that have been added to
+     * the bag.
+     * @return List of tag files
+     */
+    public List<SpeedFile> getTagFiles() {
+        return this.tagFiles;
+    }
 
+    /**
+     * Returns a list of the data files that have been added
+     * to the bag. These are the files that belong under data/
+     * @return List of data files
+     */
+    public List<SpeedFile> getDataFiles() {
+        return this.dataFiles;
+    }
 }
