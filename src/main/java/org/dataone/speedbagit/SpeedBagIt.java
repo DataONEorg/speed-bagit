@@ -1,22 +1,25 @@
 package org.dataone.speedbagit;
 
-
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.text.SimpleDateFormat;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
-import java.util.logging.Logger;
 import java.io.InputStream;
 import java.io.IOException;
 import java.io.ByteArrayInputStream;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
 
 /**
  *  The main interface for creating a BagIt compliant zip file. The SpeedBagIt class
@@ -27,7 +30,7 @@ import java.io.ByteArrayInputStream;
  *
  */
 public class SpeedBagIt {
-    private final static Logger logger = Logger.getLogger("SpeedBagIt");
+    private final static Log logger = LogFactory.getLog(SpeedBagIt.class);
 
     // Version that the bag is (0.97, 1.0, etc)
     public double version;
@@ -89,8 +92,8 @@ public class SpeedBagIt {
      * @param isTagFile: Boolean set to True when the file is a tag file
      */
     public void addFile(InputStream file, String bagPath, MessageDigest checksum, boolean isTagFile) {
+        logger.debug(String.format("Adding %s to the bag", bagPath));
         SpeedFile newFile = new SpeedFile(new SpeedStream(file, checksum), bagPath, isTagFile);
-
         if (isTagFile) {
             this.tagFiles.add(newFile);
         } else {
@@ -99,8 +102,6 @@ public class SpeedBagIt {
     }
 
     /**
-     * Generates a valid bagit.txt file. Additional parameters
-     * can be added to the file through `this.bagitMetadata`.
      * Adds a stream of data to the bag.
      *
      * @param file:      The stream representing a file or data that will be placed in the bag
@@ -108,6 +109,7 @@ public class SpeedBagIt {
      * @param isTagFile: Boolean set to True when the file is a tag file
      */
     public void addFile(InputStream file, String bagPath, boolean isTagFile) throws NoSuchAlgorithmException {
+        logger.debug(String.format("Adding %s to the bag", bagPath));
         MessageDigest newDigest = MessageDigest.getInstance(this.checksumAlgorithm);
         SpeedFile newFile = new SpeedFile(new SpeedStream(file, newDigest), bagPath, isTagFile);
         if (isTagFile) {
@@ -123,6 +125,7 @@ public class SpeedBagIt {
      * @return A string representing the bagit.txt file.
      */
     public String generateBagitTxt() {
+        logger.debug("Creating the bagit.txt file");
         String bagitFile = "";
         for (Map.Entry<String, String> entry : this.bagitMetadata.entrySet()) {
             if(bagitFile != null) {
@@ -156,10 +159,10 @@ public class SpeedBagIt {
      * @return A text string with the file contents
      */
     public String generateBagInfoTxt(String payloadOxum, int bagSize) {
-
+        logger.debug("Generating bag-info.txt");
         LocalDateTime dateTime = LocalDateTime.now();
-        DateTimeFormatter formmat1 = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ENGLISH);
-        String bagInfo = String.format("Bagging-Date: %s\n", formmat1.format(dateTime));
+        DateTimeFormatter dateFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ENGLISH);
+        String bagInfo = String.format("Bagging-Date: %s\n", dateFormat.format(dateTime));
         bagInfo = String.format("%sPayload-Oxum: %s\n", bagInfo, payloadOxum);
         bagInfo = String.format("%sBag-Size: %s\n", bagInfo, formatSize(bagSize));
         return bagInfo;
@@ -173,6 +176,7 @@ public class SpeedBagIt {
      * @param checksum: The checksum of the file
      */
     public void writeToTagManifest(String path, String checksum) {
+        logger.debug(String.format("Writing line to the tag-manifest %s %s", path, checksum));
         // Check to see if it doesn't exist (so we don't write null)
         if(this.tagManifestFile != null) {
             this.tagManifestFile += String.format("%s %s\n", path, checksum);
@@ -189,6 +193,7 @@ public class SpeedBagIt {
      * @param checksum: The checksum of the file
      */
     public void writeToDataManifest(String path, String checksum) {
+        logger.debug(String.format("Writing line to the data manifest %s %s", path, checksum));
         if(!this.dataManifestFile.equals("")) {
             this.dataManifestFile += String.format("%s %s\n", path, checksum);
         } else
@@ -197,6 +202,13 @@ public class SpeedBagIt {
         }
     }
 
+    /**
+     * Streams an individual file
+     *
+     * @param zos The output stream that the file is being written to
+     * @param streamingFile The file stream that's being written to the output stream
+     * @throws IOException
+     */
     private void streamFile(ZipOutputStream zos, SpeedFile streamingFile) throws IOException {
         try {
             ZipEntry entry = new ZipEntry(streamingFile.getPath());
@@ -219,11 +231,17 @@ public class SpeedBagIt {
      */
     public void stream(ZipOutputStream zos)
             throws IOException, NoSuchAlgorithmException {
+        String timeStamp = new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss").format(new Date());
+        logger.info(String.format("Streaming bag at %s", timeStamp));
         int totalSize = 0;
         // Stream all of the files in the root 'data' directory
-        for (SpeedFile streamingFile : this.dataFiles) {
-            this.streamFile(zos, streamingFile);
 
+        for (SpeedFile streamingFile : this.dataFiles) {
+            try {
+                this.streamFile(zos, streamingFile);
+            } finally {
+                streamingFile.getStream().close();
+            }
             String checksum = new String(streamingFile.getStream().getChecksum());
             this.writeToDataManifest(streamingFile.getPath(), checksum);
             totalSize += streamingFile.getStream().getSize();
@@ -246,8 +264,12 @@ public class SpeedBagIt {
 
         // Write all of the tag files
         for (SpeedFile streamingFile : this.tagFiles) {
-            this.streamFile(zos, streamingFile);
-            String checksum = new String(streamingFile.getStream().getChecksum());
+            try {
+                this.streamFile(zos, streamingFile);
+            } finally {
+                streamingFile.getStream().close();
+            }
+            String checksum = streamingFile.getStream().getChecksum();
             this.writeToTagManifest(streamingFile.getPath(), checksum);
         }
 
@@ -256,9 +278,14 @@ public class SpeedBagIt {
         fileName = String.format("tagmanifest-%s.txt", this.checksumAlgorithm);
         SpeedFile tagManifestStreamFile = new SpeedFile(new SpeedStream(fileStream,
                 MessageDigest.getInstance(this.checksumAlgorithm)), fileName, true);
-        this.streamFile(zos, tagManifestStreamFile);
-
+        try {
+            this.streamFile(zos, tagManifestStreamFile);
+        } finally {
+            tagManifestStreamFile.getStream().close();
+        }
         zos.close();
+        timeStamp = new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss").format(new Date());
+        logger.info(String.format("Finished streaming bag at %s", timeStamp));
     }
 
     /**
