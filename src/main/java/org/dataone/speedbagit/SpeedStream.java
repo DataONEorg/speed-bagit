@@ -3,12 +3,11 @@ import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.MessageDigest;
-
-
 import org.apache.commons.codec.binary.Hex;
+
 /**
- * A stream that computes the checksum and size of an object as it streams.
- *
+ * A class that manages a stream of bytes to a BagIt archive. While the data
+ * is transferred/streamed, the size and checksum are computed.
  */
 public class SpeedStream extends FilterInputStream {
 
@@ -74,6 +73,7 @@ public class SpeedStream extends FilterInputStream {
 
     /**
      * Returns the number of bytes that were streamed
+     *
      * @return The number of bytes streamed
      */
     public int getSize() {
@@ -83,7 +83,7 @@ public class SpeedStream extends FilterInputStream {
     /**
      * Returns the checksum of the stream.
      *
-     * Converts cksum.digest (byte[]) to a String. Since this is a checksum,
+     * Converts checksum.digest (byte[]) to a String. Since this is a checksum,
      * it should take up minimal space in memory.
      *
      * @return The checksum of the streamed bytes

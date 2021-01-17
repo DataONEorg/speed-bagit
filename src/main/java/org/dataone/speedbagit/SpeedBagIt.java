@@ -142,6 +142,7 @@ public class SpeedBagIt {
     /**
      * Takes a size and returns B, KB, Mb, GB, etc. Taken from
      * https://stackoverflow.com/questions/3758606/how-can-i-convert-byte-size-into-a-human-readable-format-in-java
+     *
      * @param size: The size being converted
      * @return The size as 5 B, 5 KB, 5 GB, etc
      */
