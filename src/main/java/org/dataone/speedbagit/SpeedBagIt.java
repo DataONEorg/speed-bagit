@@ -57,9 +57,9 @@ public class SpeedBagIt {
     // Version that the bag is (0.97, 1.0, etc)
     public double version;
     // Contents of tagmanifest-{algo}.txt file
-    public String tagManifestFile;
+    public Map<String, String> tagManifestFile;
     // Contents of manifest-{algo}.txt file
-    public String dataManifestFile;
+    public Map<String, String> dataManifestFile;
     // The name of the algorithm. Should be compatible with the MessageDigest class
     public String checksumAlgorithm;
     // Map of key-values that go in the bagit.txt file
@@ -84,8 +84,8 @@ public class SpeedBagIt {
         this.dataFiles = new ArrayList<>();
         this.tagFiles = new ArrayList<>();
         this.bagitMetadata = bagitMetadata;
-        this.dataManifestFile="";
-        this.tagManifestFile="";
+        this.dataManifestFile = new HashMap<> ();
+        this.tagManifestFile = new HashMap<> ();
     }
 
     /**
@@ -101,8 +101,8 @@ public class SpeedBagIt {
         this.dataFiles = new ArrayList<>();
         this.tagFiles = new ArrayList<>();
         this.bagitMetadata = new HashMap<> ();
-        this.dataManifestFile="";
-        this.tagManifestFile="";
+        this.dataManifestFile = new HashMap<> ();
+        this.tagManifestFile = new HashMap<> ();
     }
 
     /**
@@ -201,11 +201,7 @@ public class SpeedBagIt {
     public void writeToTagManifest(String path, String checksum) {
         logger.debug(String.format("Writing line to the tag-manifest %s %s", path, checksum));
         // Check to see if it doesn't exist (so we don't write null)
-        if(this.tagManifestFile != null) {
-            this.tagManifestFile += String.format("%s %s\n", path, checksum);
-        } else {
-            this.tagManifestFile = String.format("%s %s\n", path, checksum);
-        }
+        tagManifestFile.put(checksum, path);
     }
 
     /**
@@ -217,12 +213,7 @@ public class SpeedBagIt {
      */
     public void writeToDataManifest(String path, String checksum) {
         logger.debug(String.format("Writing line to the data manifest %s %s", path, checksum));
-        if(!this.dataManifestFile.equals("")) {
-            this.dataManifestFile += String.format("%s %s\n", path, checksum);
-        } else
-        {
-            this.dataManifestFile = String.format("%s %s\n", path, checksum);
-        }
+        dataManifestFile.put(checksum, path);
     }
 
     /**
@@ -262,12 +253,13 @@ public class SpeedBagIt {
         for (SpeedFile streamingFile : this.dataFiles) {
             try {
                 this.streamFile(zos, streamingFile);
+                String checksum = new String(streamingFile.getStream().getChecksum());
+                this.writeToDataManifest(streamingFile.getPath(), checksum);
+                totalSize += streamingFile.getStream().getSize();
             } finally {
                 streamingFile.getStream().close();
             }
-            String checksum = new String(streamingFile.getStream().getChecksum());
-            this.writeToDataManifest(streamingFile.getPath(), checksum);
-            totalSize += streamingFile.getStream().getSize();
+
         }
         String payloadOxum =  String.format("%s.%s",totalSize, this.dataFiles.size());
         // Generate and add the bagit.txt file
@@ -281,23 +273,27 @@ public class SpeedBagIt {
         this.addFile(fileStream, "bag-info.txt", MessageDigest.getInstance(checksumAlgorithm), true);
 
         // Generate and add the data manifest file
+        String dataManifest = bagFileToString(this.dataManifestFile);
         String fileName = String.format("manifest-%s.txt", this.checksumAlgorithm);
-        fileStream = new ByteArrayInputStream(this.dataManifestFile.getBytes(StandardCharsets.UTF_8));
+        fileStream = new ByteArrayInputStream(dataManifest.getBytes(StandardCharsets.UTF_8));
         this.addFile(fileStream, fileName, MessageDigest.getInstance(checksumAlgorithm), true);
 
         // Write all of the tag files
         for (SpeedFile streamingFile : this.tagFiles) {
             try {
                 this.streamFile(zos, streamingFile);
+                String checksum = streamingFile.getStream().getChecksum();
+                this.writeToTagManifest(streamingFile.getPath(), checksum);
             } finally {
                 streamingFile.getStream().close();
             }
-            String checksum = streamingFile.getStream().getChecksum();
-            this.writeToTagManifest(streamingFile.getPath(), checksum);
         }
 
-        // Create the SpeedFile and stream it
-        fileStream = new ByteArrayInputStream(this.tagManifestFile.getBytes(StandardCharsets.UTF_8));
+        // Create the tag manifest and stream it
+
+
+        String tagMannifest = bagFileToString(this.tagManifestFile);
+        fileStream = new ByteArrayInputStream(tagMannifest.getBytes(StandardCharsets.UTF_8));
         fileName = String.format("tagmanifest-%s.txt", this.checksumAlgorithm);
         SpeedFile tagManifestStreamFile = new SpeedFile(new SpeedStream(fileStream,
                 MessageDigest.getInstance(this.checksumAlgorithm)), fileName, true);
@@ -335,5 +331,19 @@ public class SpeedBagIt {
      */
     public List<SpeedFile> getDataFiles() {
         return this.dataFiles;
+    }
+
+    public static String bagFileToString(Map<String, String> mapFile) {
+        StringBuilder builder = new StringBuilder();
+        for(Map.Entry<String, String> e : mapFile.entrySet())
+        {
+            String key = e.getKey();
+            String value = e.getValue();
+            builder.append(key);
+            builder.append(' ');
+            builder.append(value);
+            builder.append(System.getProperty("line.separator"));
+        }
+        return builder.toString();
     }
 }
