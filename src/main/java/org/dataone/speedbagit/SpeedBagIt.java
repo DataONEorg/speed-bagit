@@ -22,6 +22,10 @@
 
 package org.dataone.speedbagit;
 
+import java.io.ByteArrayInputStream;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -34,11 +38,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Properties;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
-import java.io.InputStream;
-import java.io.IOException;
-import java.io.ByteArrayInputStream;
+
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -54,6 +57,8 @@ import org.apache.commons.logging.LogFactory;
 public class SpeedBagIt {
     private final static Log logger = LogFactory.getLog(SpeedBagIt.class);
 
+    // The properties file holding string constants
+    private Properties properties;
     // Version that the bag is (0.97, 1.0, etc)
     public double version;
     // Contents of tagmanifest-{algo}.txt file
@@ -78,7 +83,7 @@ public class SpeedBagIt {
      */
     public SpeedBagIt(double version,
                     String checksumAlgorithm,
-                    Map<String, String> bagitMetadata) {
+                    Map<String, String> bagitMetadata) throws IOException {
         this.version = version;
         this.checksumAlgorithm = checksumAlgorithm;
         this.dataFiles = new ArrayList<>();
@@ -86,6 +91,10 @@ public class SpeedBagIt {
         this.bagitMetadata = bagitMetadata;
         this.dataManifestFile = new HashMap<> ();
         this.tagManifestFile = new HashMap<> ();
+
+        FileReader reader = new FileReader("src/main/resources/speed-bagit.properties");
+        this.properties = new Properties();
+        this.properties.load(reader);
     }
 
     /**
@@ -95,7 +104,7 @@ public class SpeedBagIt {
      * @param checksumAlgorithm: The name of the algorithm used to checksum the files
      */
     public SpeedBagIt(double version,
-                      String checksumAlgorithm) {
+                      String checksumAlgorithm) throws IOException {
         this.version = version;
         this.checksumAlgorithm = checksumAlgorithm;
         this.dataFiles = new ArrayList<>();
@@ -103,6 +112,10 @@ public class SpeedBagIt {
         this.bagitMetadata = new HashMap<> ();
         this.dataManifestFile = new HashMap<> ();
         this.tagManifestFile = new HashMap<> ();
+
+        FileReader reader = new FileReader("src/main/resources/speed-bagit.properties");
+        this.properties = new Properties();
+        this.properties.load(reader);
     }
 
     /**
@@ -156,8 +169,12 @@ public class SpeedBagIt {
                 bagitFile = String.format("%s: %s\n", entry.getKey(), entry.getValue());
             }
         }
-        bagitFile = String.format("%sBagIt-Version: %s\n", bagitFile, version);
-        bagitFile = String.format("%sTag-File-Character-Encoding: UTF-8\n", bagitFile);
+        String tagFileversion = this.properties.getProperty("tag.file.version");
+        String tagFileCharacterEncodingName = this.properties.getProperty("tag.file.character.encoding.name");
+        String tagFileCharacterEncodingValue = this.properties.getProperty("tag.file.character.encoding.value");
+
+        bagitFile = String.format("%s%s: %s\n", bagitFile, tagFileversion, version);
+        bagitFile = String.format("%s%s: %s\n", bagitFile, tagFileCharacterEncodingName, tagFileCharacterEncodingValue);
         return bagitFile;
     }
 
@@ -185,9 +202,12 @@ public class SpeedBagIt {
         logger.debug("Generating bag-info.txt");
         LocalDateTime dateTime = LocalDateTime.now();
         DateTimeFormatter dateFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ENGLISH);
-        String bagInfo = String.format("Bagging-Date: %s\n", dateFormat.format(dateTime));
-        bagInfo = String.format("%sPayload-Oxum: %s\n", bagInfo, payloadOxum);
-        bagInfo = String.format("%sBag-Size: %s\n", bagInfo, formatSize(bagSize));
+        String bagInfoDateKey = this.properties.getProperty("bag.info.date");
+        String bagInfo = String.format("%s: %s\n", bagInfoDateKey, dateFormat.format(dateTime));
+        String bagInfoPayloadOxum = this.properties.getProperty("bag.info.payloadOxum");
+        bagInfo = String.format("%s%sPayload-Oxum: %s\n", bagInfo, bagInfoPayloadOxum, payloadOxum);
+        String bagInfoBagSize = this.properties.getProperty("bag.info.bagSize");
+        bagInfo = String.format("%s%s: %s\n", bagInfo, bagInfoBagSize, formatSize(bagSize));
         return bagInfo;
     }
 
@@ -264,13 +284,15 @@ public class SpeedBagIt {
         String payloadOxum =  String.format("%s.%s",totalSize, this.dataFiles.size());
         // Generate and add the bagit.txt file
         InputStream bagTextStream = new ByteArrayInputStream(this.generateBagitTxt().getBytes(StandardCharsets.UTF_8));
-        this.addFile(bagTextStream, "bagit.txt", MessageDigest.getInstance(checksumAlgorithm), true);
+        String bagitFileName = this.properties.getProperty("bagit.file.name");
+        this.addFile(bagTextStream, bagitFileName, MessageDigest.getInstance(checksumAlgorithm), true);
 
 
         // Generate and add the bag-info.txt file
         String bagInfoFile = generateBagInfoTxt(payloadOxum, totalSize);
         InputStream fileStream = new ByteArrayInputStream(bagInfoFile.getBytes(StandardCharsets.UTF_8));
-        this.addFile(fileStream, "bag-info.txt", MessageDigest.getInstance(checksumAlgorithm), true);
+        String bagitInfoFileName = this.properties.getProperty("bag.info.file.name");
+        this.addFile(fileStream, bagitInfoFileName, MessageDigest.getInstance(checksumAlgorithm), true);
 
         // Generate and add the data manifest file
         String dataManifest = bagFileToString(this.dataManifestFile);

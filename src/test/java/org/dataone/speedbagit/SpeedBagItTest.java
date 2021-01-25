@@ -110,7 +110,7 @@ public class SpeedBagItTest {
      * inserting the correct properties into the bag metadata file.
      */
     @Test
-    public void testCtorMetadata() {
+    public void testCtorMetadata() throws IOException {
         double bagVersion = 1.0;
         String checksumAlgorithm = "MD5";
 
@@ -127,7 +127,7 @@ public class SpeedBagItTest {
      * Helper method that creates a stock Bag
      * @return The SpeedBag object
      */
-    public SpeedBagIt getStockBag() throws SpeedBagException, NoSuchAlgorithmException {
+    public SpeedBagIt getStockBag() throws SpeedBagException, NoSuchAlgorithmException, IOException {
         double bagVersion = 1.0;
         String checksumAlgorithm = "MD5";
         Map<String, String> bagMetadata = new HashMap<>();
@@ -160,7 +160,7 @@ public class SpeedBagItTest {
 >>>>>>> Stashed changes
      */
     @Test
-    public void testCtor() {
+    public void testCtor() throws IOException {
         double bagVersion = 1.0;
         String checksumAlgorithm = "MD5";
         // Custom bag metadata
@@ -179,7 +179,7 @@ public class SpeedBagItTest {
      * Test that the default bagit.txt file is correct
      */
     @Test
-    public void testGenerateBagIt() {
+    public void testGenerateBagIt() throws IOException {
         // Don't specify any additional metadata for bagit.txt
         double bagVersion = 1.0;
         SpeedBagIt bag = new SpeedBagIt(bagVersion, "MD5");
@@ -205,7 +205,7 @@ public class SpeedBagItTest {
      * by the user.
      */
     @Test
-    public void testGenerateBagitTxtCustom() {
+    public void testGenerateBagitTxtCustom() throws IOException {
 
         String bagDescription = "A test bag.";
         String externalDescription = "A bag used for testing.";
@@ -295,7 +295,7 @@ public class SpeedBagItTest {
      * Test that streams are correctly added.
      */
     @Test
-    public void testAddFile() throws SpeedBagException, NoSuchAlgorithmException {
+    public void testAddFile() throws SpeedBagException, NoSuchAlgorithmException, IOException {
 
         // Keep track of the locations where the files should go so that
         // the bag can be tested against them
@@ -323,14 +323,14 @@ public class SpeedBagItTest {
     }
 
     @Test
-    public void testGetDataFiles() throws SpeedBagException, NoSuchAlgorithmException {
+    public void testGetDataFiles() throws SpeedBagException, NoSuchAlgorithmException, IOException {
         SpeedBagIt bag = getStockBag();
         List<SpeedFile> dataFiles = bag.getDataFiles();
         assert dataFiles.size() == 2;
     }
 
     @Test
-    public void testGetTagFiles() throws SpeedBagException, NoSuchAlgorithmException {
+    public void testGetTagFiles() throws SpeedBagException, NoSuchAlgorithmException, IOException {
         SpeedBagIt bag = getStockBag();
         List<SpeedFile> metadataFiles = bag.getTagFiles();
         assert metadataFiles.size() == 2;
