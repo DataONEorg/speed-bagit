@@ -1,18 +1,42 @@
+/**
+ * This work was created by participants in the DataONE project, and is
+ * jointly copyrighted by participating institutions in DataONE. For
+ * more information on DataONE, see our web site at http://dataone.org.
+ *
+ *   Copyright ${year}
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * $Id$
+ */
+
 package org.dataone.speedbagit;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.MessageDigest;
+import org.apache.commons.codec.binary.Hex;
 
 /**
- * A stream that computes the checksum and size of an object as it streams.
- *
+ * A class that manages a stream of bytes to a BagIt archive. While the data
+ * is transferred/streamed, the size and checksum are computed.
  */
 public class SpeedStream extends FilterInputStream {
 
-    private MessageDigest cksum;
+    // The object that holds the checksum state & performs checksumming
+    private MessageDigest digest;
+    // The number of bytes streamed
     private int size;
-
     /**
      * Constructs a new SpeedStream object
      *
@@ -22,8 +46,11 @@ public class SpeedStream extends FilterInputStream {
      */
     public SpeedStream(InputStream in, MessageDigest sum) {
         super(in);
-        this.cksum = sum;
+        this.digest = sum;
         this.size = 0;
+
+        // Reset the MessageDigest's state
+        this.digest.reset();
     }
 
     /**
@@ -35,7 +62,7 @@ public class SpeedStream extends FilterInputStream {
     public int read() throws IOException {
         int b = in.read();
         if (b != -1) {
-            this.cksum.update((byte) b);
+            this.digest.update((byte) b);
             this.size += 1;
         }
         return b;
@@ -60,8 +87,7 @@ public class SpeedStream extends FilterInputStream {
     public int read(byte[] buf, int off, int len) throws IOException {
         len = in.read(buf, off, len);
         if (len != -1) {
-            this.cksum.update(buf, off, len);
-            // DEVNOTE: This is incorrect; this adds the *maximum* number of bytes read
+            this.digest.update(buf, off, len);
             this.size += len;
         }
         return len;
@@ -69,6 +95,7 @@ public class SpeedStream extends FilterInputStream {
 
     /**
      * Returns the number of bytes that were streamed
+     *
      * @return The number of bytes streamed
      */
     public int getSize() {
@@ -76,10 +103,14 @@ public class SpeedStream extends FilterInputStream {
     }
 
     /**
+     * Returns the checksum of the stream.
+     *
+     * Converts checksum.digest (byte[]) to a String. Since this is a checksum,
+     * it should take up minimal space in memory.
      *
      * @return The checksum of the streamed bytes
      */
-    public byte[] getChecksum() {
-        return this.cksum.digest();
+    public String getChecksum() {
+        return Hex.encodeHexString(this.digest.digest());
     }
 }
