@@ -157,7 +157,6 @@ public class SpeedBagItTest {
 
     /**
      * Test that the constructor is setting the right parameters.
->>>>>>> Stashed changes
      */
     @Test
     public void testCtor() throws IOException {
