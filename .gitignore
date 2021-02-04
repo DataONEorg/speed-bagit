@@ -46,3 +46,8 @@ venv
 node_modules
 .sass-cache
 /target/
+
+# IntelliJ Project folder
+.idea/*
+.project
+.settings/*
