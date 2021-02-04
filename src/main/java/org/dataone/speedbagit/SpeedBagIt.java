@@ -23,7 +23,6 @@
 package org.dataone.speedbagit;
 
 import java.io.ByteArrayInputStream;
-import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -38,6 +37,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -92,9 +92,9 @@ public class SpeedBagIt {
         this.dataManifestFile = new HashMap<> ();
         this.tagManifestFile = new HashMap<> ();
 
-        FileReader reader = new FileReader("src/main/resources/speed-bagit.properties");
         this.properties = new Properties();
-        this.properties.load(reader);
+        this.properties.load(Objects.requireNonNull(this.getClass().
+                getClassLoader().getResourceAsStream("speed-bagit.properties")));
     }
 
     /**
@@ -113,9 +113,10 @@ public class SpeedBagIt {
         this.dataManifestFile = new HashMap<> ();
         this.tagManifestFile = new HashMap<> ();
 
-        FileReader reader = new FileReader("src/main/resources/speed-bagit.properties");
+
         this.properties = new Properties();
-        this.properties.load(reader);
+        this.properties.load(Objects.requireNonNull(this.getClass().
+                getClassLoader().getResourceAsStream("speed-bagit.properties")));
     }
 
     /**
