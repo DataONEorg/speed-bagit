@@ -1,6 +1,8 @@
 # Compiled class file
 *.class
 
+# Build target folder
+target/*
 # Log file
 *.log
 
@@ -43,3 +45,9 @@ Thumbs.db
 venv
 node_modules
 .sass-cache
+/target/
+
+# IntelliJ Project folder
+.idea/*
+.project
+.settings/*
