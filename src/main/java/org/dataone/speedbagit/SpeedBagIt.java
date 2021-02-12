@@ -42,6 +42,7 @@ import java.util.Properties;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -50,7 +51,7 @@ import org.apache.commons.logging.LogFactory;
  *  The main interface for creating a BagIt compliant zip file. The SpeedBagIt class
  *  manages SpeedFile objects, which represent files that will be written to the output
  *  stream.
- *  This class is also responsible for generating the tagmangifest and manfiest files along
+ *  This class is also responsible for generating the tagmanifest and manfiest files along
  *  with the default BagIt files: bagit.txt & bag-info.txt.
  *
  */
@@ -250,7 +251,7 @@ public class SpeedBagIt {
             zos.putNextEntry(entry);
 
             SpeedStream fileStream = streamingFile.getStream();
-            fileStream.transferTo(zos);
+            IOUtils.copy(fileStream, zos);
         } finally {
             zos.closeEntry();
         }
