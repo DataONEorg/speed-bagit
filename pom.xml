@@ -108,4 +108,10 @@
       </plugins>
     </pluginManagement>
   </build>
+  <scm>
+    <url>https://repository.dataone.org/software/cicore</url>
+    <connection>scm:svn:https://repository.dataone.org/software/cicore</connection>
+    <developerConnection>scm:svn:https://repository.dataone.org/software/cicore</developerConnection>
+    <tag>HEAD</tag>
+  </scm>
 </project>
