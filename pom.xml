@@ -6,15 +6,27 @@
   <groupId>org.dataone</groupId>
   <artifactId>SpeedBagIt</artifactId>
   <version>1.0-SNAPSHOT</version>
+  <packaging>jar</packaging>
   <name>SpeedBagIt</name>
+  <url>http://maven.apache.org</url>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <maven.compiler.source>1.8</maven.compiler.source>
-    <maven.compiler.target>1.8</maven.compiler.target>
-    <maven.deploy.version>3.0.0-M1</maven.deploy.version>
-    <maven.wagon.version>2.10</maven.wagon.version>
+    <compiler.target.version>1.8</compiler.target.version>
   </properties>
+
+  <repositories>
+    <repository>
+      <id>dataone.org</id>
+      <url>http://maven.dataone.org/</url>
+      <releases>
+        <enabled>true</enabled>
+      </releases>
+      <snapshots>
+        <enabled>true</enabled>
+      </snapshots>
+    </repository>
+  </repositories>
 
   <dependencies>
     <dependency>
@@ -42,102 +54,69 @@
     	<artifactId>commons-io</artifactId>
     	<version>2.8.0</version>
 	</dependency>
-      
   </dependencies>
 
   <build>
-    <pluginManagement><!-- lock down plugins versions to avoid using Maven defaults (may be moved to parent pom) -->
       <plugins>
-        <!-- clean lifecycle, see https://maven.apache.org/ref/current/maven-core/lifecycles.html#clean_Lifecycle -->
         <plugin>
-          <artifactId>maven-clean-plugin</artifactId>
-          <version>3.1.0</version>
-        </plugin>
-        <!-- default lifecycle, jar packaging: see https://maven.apache.org/ref/current/maven-core/default-bindings.html#Plugin_bindings_for_jar_packaging -->
-        <plugin>
-          <artifactId>maven-resources-plugin</artifactId>
-          <version>3.0.2</version>
-        </plugin>
-        <plugin>
-          <artifactId>maven-compiler-plugin</artifactId>
-          <version>3.8.0</version>
-          <configuration>
-            <source>1.8</source>
-            <target>1.8</target>
-            <verbose>true</verbose>
-          </configuration>
-        </plugin>
-        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-surefire-plugin</artifactId>
-          <version>2.22.1</version>
-        </plugin>
-        <plugin>
-          <artifactId>maven-jar-plugin</artifactId>
-          <version>3.0.2</version>
-        </plugin>
-        <plugin>
-          <artifactId>maven-install-plugin</artifactId>
-          <version>2.5.2</version>
-        </plugin>
-        <plugin>
-          <artifactId>maven-deploy-plugin</artifactId>
-          <version>2.8.2</version>
-        </plugin>
-        <!-- site lifecycle, see https://maven.apache.org/ref/current/maven-core/lifecycles.html#site_Lifecycle -->
-        <plugin>
-          <artifactId>maven-site-plugin</artifactId>
-          <version>3.7.1</version>
-        </plugin>
-        <plugin>
-          <artifactId>maven-project-info-reports-plugin</artifactId>
-          <version>3.0.0</version>
-        </plugin>
-        <plugin>
-          <groupId>org.codehaus.mojo</groupId>
-          <artifactId>cobertura-maven-plugin</artifactId>
-          <version>2.7</version>
+          <version>2.16</version>
           <configuration>
-            <formats>
-              <format>html</format>
-              <format>xml</format>
-            </formats>
-            <check />
+            <enableAssertions>true</enableAssertions>
           </configuration>
         </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-deploy-plugin</artifactId>
-          <version>${maven.deploy.version}</version>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <configuration>
+            <source>1.8</source>
+            <target>${compiler.target.version}</target>
+          </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>buildnumber-maven-plugin</artifactId>
           <executions>
             <execution>
-              <id>deploy-file</id>
+              <phase>validate</phase>
               <goals>
-                <goal>deploy-file</goal>
+                <goal>create</goal>
               </goals>
-              <phase>deploy</phase>
+            </execution>
+          </executions>
+          <configuration>
+            <doCheck>false</doCheck>
+            <doUpdate>false</doUpdate>
+          </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-shade-plugin</artifactId>
+          <version>1.7.1</version>
+          <executions>
+            <execution>
+              <phase>package</phase>
+              <goals>
+                <goal>shade</goal>
+              </goals>
               <configuration>
-                <url>${url}</url>
-                <groupId>${project.groupId}</groupId>
-                <artifactId>${project.artifactId}</artifactId>
-                <file>${project.build.directory}/${project.build.finalName}.jar</file>
-                <version>${project.version}</version>
-                <generatePom>false</generatePom>
-                <pomFile>pom.xml</pomFile>
-                <packaging>jar</packaging>
-                <repositoryId>jenkins.dataone.org</repositoryId>
+                <outputFile>${basedir}/target/speedbagit.jar</outputFile>
+                <outputDirectory>${basedir}</outputDirectory>
               </configuration>
             </execution>
           </executions>
         </plugin>
       </plugins>
-    </pluginManagement>
-    <extensions>
-      <extension>
-        <groupId>org.apache.maven.wagon</groupId>
-        <artifactId>wagon-ssh-external</artifactId>
-        <version>${maven.wagon.version}</version>
-      </extension>
-    </extensions>
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+        <filtering>false</filtering>
+        <includes>
+          <include>**/*.*</include>
+        </includes>
+      </resource>
+    </resources>
   </build>
   <scm>
     <url>https://repository.dataone.org/software/cicore</url>
@@ -145,13 +124,10 @@
     <developerConnection>scm:svn:https://repository.dataone.org/software/cicore</developerConnection>
     <tag>HEAD</tag>
   </scm>
-  <distributionManagement>
-    <repository>
-      <uniqueVersion>false</uniqueVersion>
-      <id>jenkins.dataone.org</id>
-      <name>DataONE</name>
-      <url>${url}</url>
-      <layout>default</layout>
-    </repository>
-  </distributionManagement>
+  <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+      <url>LICENSE.txt</url>
+    </license>
+  </licenses>
 </project>
