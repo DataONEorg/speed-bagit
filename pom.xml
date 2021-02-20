@@ -15,6 +15,15 @@
     <compiler.target.version>1.8</compiler.target.version>
   </properties>
 
+  <developers>
+    <developer>
+      <name>DataONE</name>
+      <email>developers@dataone.org</email>
+      <organization>DataONE</organization>
+      <organizationUrl>https://dataone.org/</organizationUrl>
+    </developer>
+  </developers>
+
   <repositories>
     <repository>
       <id>dataone.org</id>
@@ -27,6 +36,142 @@
       </snapshots>
     </repository>
   </repositories>
+
+  <build>
+    <directory>target</directory>
+    <sourceDirectory>src/main/java</sourceDirectory>
+    <testSourceDirectory>src/test/java</testSourceDirectory>
+    <outputDirectory>target/main-target</outputDirectory>
+    <testOutputDirectory>target/test-target</testOutputDirectory>
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+        <filtering>true</filtering>
+        <includes>
+          <include>buildInfo/buildInfo.properties</include>
+        </includes>
+      </resource>
+      <resource>
+        <directory>src/main/resources</directory>
+        <filtering>false</filtering>
+        <includes>
+          <include>**/*.*</include>
+        </includes>
+      </resource>
+    </resources>
+
+  <plugins>
+    <plugin>
+      <groupId>org.apache.maven.plugins</groupId>
+      <artifactId>maven-compiler-plugin</artifactId>
+      <configuration>
+        <source>1.8</source>
+        <target>${compiler.target.version}</target>
+      </configuration>
+    </plugin>
+
+    <plugin>
+      <groupId>org.codehaus.mojo</groupId>
+      <artifactId>buildnumber-maven-plugin</artifactId>
+      <executions>
+        <execution>
+          <phase>validate</phase>
+          <goals>
+            <goal>create</goal>
+          </goals>
+        </execution>
+      </executions>
+      <configuration>
+        <doCheck>false</doCheck>
+        <doUpdate>false</doUpdate>
+      </configuration>
+    </plugin>
+    <plugin>
+      <groupId>org.apache.maven.plugins</groupId>
+      <artifactId>maven-jar-plugin</artifactId>
+      <configuration>
+        <archive>
+          <manifestEntries>
+            <D1-version>${project.version}</D1-version>
+            <D1-SCM-Revision>${buildNumber}</D1-SCM-Revision>
+            <D1-SCM-Branch>${scmBranch}</D1-SCM-Branch>
+            <D1-Build-TimeStamp>${timestamp}</D1-Build-TimeStamp>
+          </manifestEntries>
+        </archive>
+      </configuration>
+      <executions>
+        <!-- make a test resources jar -->
+        <execution>
+          <goals>
+            <goal>test-jar</goal>
+          </goals>
+        </execution>
+      </executions>
+    </plugin>
+    <plugin>
+      <groupId>org.apache.maven.plugins</groupId>
+      <artifactId>maven-source-plugin</artifactId>
+      <version>2.2.1</version>
+      <executions>
+        <execution>
+          <id>attach-sources</id>
+          <phase>package</phase>
+          <goals>
+            <goal>jar-no-fork</goal>
+          </goals>
+        </execution>
+      </executions>
+    </plugin>
+    <plugin>
+      <artifactId>maven-clean-plugin</artifactId>
+      <configuration>
+        <excludeDefaultDirectories>true</excludeDefaultDirectories>
+        <filesets>
+          <fileset>
+            <directory>${project.build.directory}</directory>
+            <excludes>
+              <exclude>**/*.jar</exclude>
+              <exclude>**/.*</exclude>
+              <exclude>**/.svn/*</exclude>
+            </excludes>
+            <followSymlinks>false</followSymlinks>
+          </fileset>
+        </filesets>
+      </configuration>
+    </plugin>
+    <plugin>
+      <groupId>org.sonatype.plugins</groupId>
+      <artifactId>nexus-staging-maven-plugin</artifactId>
+      <version>1.6.6</version>
+      <extensions>true</extensions>
+      <configuration>
+        <serverId>ossrh</serverId>
+        <nexusUrl>https://oss.sonatype.org/</nexusUrl>
+        <autoReleaseAfterClose>true</autoReleaseAfterClose>
+      </configuration>
+    </plugin>
+    <plugin>
+      <groupId>org.apache.maven.plugins</groupId>
+      <artifactId>maven-gpg-plugin</artifactId>
+      <version>1.6</version>
+      <executions>
+        <execution>
+          <id>sign-artifacts</id>
+          <phase>verify</phase>
+          <goals>
+            <goal>sign</goal>
+          </goals>
+          <configuration>
+            <gpgArguments>
+              <arg>--pinentry-mode</arg>
+              <arg>loopback</arg>
+            </gpgArguments>
+          </configuration>
+        </execution>
+      </executions>
+    </plugin>
+  </plugins>
+  </build>
 
   <dependencies>
     <dependency>
@@ -44,86 +189,65 @@
       <artifactId>commons-codec</artifactId>
       <version>1.15</version>
     </dependency>
-      <dependency>
-          <groupId>commons-logging</groupId>
-          <artifactId>commons-logging</artifactId>
-          <version>1.2</version>
+    <dependency>
+      <groupId>commons-logging</groupId>
+      <artifactId>commons-logging</artifactId>
+      <version>1.2</version>
     </dependency>
-	<dependency>
-    	<groupId>commons-io</groupId>
-    	<artifactId>commons-io</artifactId>
-    	<version>2.8.0</version>
-	</dependency>
+    <dependency>
+      <groupId>commons-io</groupId>
+      <artifactId>commons-io</artifactId>
+      <version>2.8.0</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.maven.plugins</groupId>
+      <artifactId>maven-compiler-plugin</artifactId>
+      <version>2.3.1</version>
+      <type>maven-plugin</type>
+      <scope>compile</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.maven.plugins</groupId>
+      <artifactId>maven-jar-plugin</artifactId>
+      <version>2.3.1</version>
+      <type>maven-plugin</type>
+      <scope>compile</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>commons-lang</groupId>
+          <artifactId>commons-lang</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.maven.plugins</groupId>
+      <artifactId>maven-clean-plugin</artifactId>
+      <version>2.4.1</version>
+      <type>maven-plugin</type>
+      <scope>compile</scope>
+    </dependency>
   </dependencies>
 
-  <build>
-      <plugins>
-        <plugin>
-          <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-surefire-plugin</artifactId>
-          <version>2.22.0</version>
-          <configuration>
-            <enableAssertions>true</enableAssertions>
-          </configuration>
-        </plugin>
-        <plugin>
-          <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-compiler-plugin</artifactId>
-          <configuration>
-            <source>1.8</source>
-            <target>${compiler.target.version}</target>
-          </configuration>
-        </plugin>
-        <plugin>
-          <groupId>org.codehaus.mojo</groupId>
-          <artifactId>buildnumber-maven-plugin</artifactId>
-          <executions>
-            <execution>
-              <phase>validate</phase>
-              <goals>
-                <goal>create</goal>
-              </goals>
-            </execution>
-          </executions>
-          <configuration>
-            <doCheck>false</doCheck>
-            <doUpdate>false</doUpdate>
-          </configuration>
-        </plugin>
-        <plugin>
-          <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-shade-plugin</artifactId>
-          <version>1.7.1</version>
-          <executions>
-            <execution>
-              <phase>package</phase>
-              <goals>
-                <goal>shade</goal>
-              </goals>
-              <configuration>
-                <outputFile>${basedir}/target/speedbagit.jar</outputFile>
-                <outputDirectory>${basedir}</outputDirectory>
-              </configuration>
-            </execution>
-          </executions>
-        </plugin>
-      </plugins>
-    <resources>
-      <resource>
-        <directory>src/main/resources</directory>
-        <filtering>false</filtering>
-        <includes>
-          <include>**/*.*</include>
-        </includes>
-      </resource>
-    </resources>
-  </build>
+
   <scm>
-    <url>https://repository.dataone.org/software/cicore</url>
-    <connection>scm:svn:https://repository.dataone.org/software/cicore</connection>
-    <developerConnection>scm:svn:https://repository.dataone.org/software/cicore</developerConnection>
+    <url>https://github.com/DataONEorg/speed-bagit</url>
+    <connection>scm:git:ssh://github.com:DataONEorg/speed-bagit.git</connection>
+    <developerConnection>scm:git:ssh://git@github.com:DataONEorg/speed-bagit.git</developerConnection>
     <tag>HEAD</tag>
   </scm>
+  <distributionManagement>
+    <snapshotRepository>
+      <id>ossrh</id>
+      <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+    </snapshotRepository>
+    <repository>
+      <id>ossrh</id>
+      <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+    </repository>
+  </distributionManagement>
   <licenses>
     <license>
       <name>Apache License, Version 2.0</name>
