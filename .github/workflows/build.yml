@@ -1,13 +1,11 @@
-# This workflow will build a Java project with Maven
-# For more information see: https://help.github.com/actions/language-and-framework-guides/building-and-testing-java-with-maven
-
-name: Java CI with Maven
+name: Java Build SNAPSHOT and push to Maven Central
+#
 
 on:
   push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+    branches:
+      - develop
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -29,6 +27,15 @@ jobs:
           path: ~/.m2
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-m2
+      #      - name: Set up Maven Central
+      #        uses: actions/setup-java@v1
+      #        with:
+      #          java-version: 1.8
+      #          server-id: ossrh
+      #          server-username: MAVEN_USERNAME
+      #          server-password: MAVEN_PASSWORD
+      #          gpg-private-key: ${{ secrets.OSSRH_GPG_SECRET_KEY}}
+      #          gpg-passphrase: MAVEN_GPG_PASSPHRASE
       - name: Build and publish package
         run: mvn -B package deploy
         env:
