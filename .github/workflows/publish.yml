@@ -10,9 +10,9 @@ on:
     types:
       - created
   # Temporary, for inital push to sonatype
-  #push:
-  #  branches:
-  #    - main
+  push:
+    branches:
+      - main
 
 jobs:
   build:
