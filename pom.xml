@@ -71,22 +71,6 @@
     </plugin>
 
     <plugin>
-      <groupId>org.codehaus.mojo</groupId>
-      <artifactId>buildnumber-maven-plugin</artifactId>
-      <executions>
-        <execution>
-          <phase>validate</phase>
-          <goals>
-            <goal>create</goal>
-          </goals>
-        </execution>
-      </executions>
-      <configuration>
-        <doCheck>false</doCheck>
-        <doUpdate>false</doUpdate>
-      </configuration>
-    </plugin>
-    <plugin>
       <groupId>org.apache.maven.plugins</groupId>
       <artifactId>maven-jar-plugin</artifactId>
       <configuration>
@@ -138,37 +122,6 @@
           </fileset>
         </filesets>
       </configuration>
-    </plugin>
-    <plugin>
-      <groupId>org.sonatype.plugins</groupId>
-      <artifactId>nexus-staging-maven-plugin</artifactId>
-      <version>1.6.6</version>
-      <extensions>true</extensions>
-      <configuration>
-        <serverId>ossrh</serverId>
-        <nexusUrl>https://oss.sonatype.org/</nexusUrl>
-        <autoReleaseAfterClose>true</autoReleaseAfterClose>
-      </configuration>
-    </plugin>
-    <plugin>
-      <groupId>org.apache.maven.plugins</groupId>
-      <artifactId>maven-gpg-plugin</artifactId>
-      <version>1.6</version>
-      <executions>
-        <execution>
-          <id>sign-artifacts</id>
-          <phase>verify</phase>
-          <goals>
-            <goal>sign</goal>
-          </goals>
-          <configuration>
-            <gpgArguments>
-              <arg>--pinentry-mode</arg>
-              <arg>loopback</arg>
-            </gpgArguments>
-          </configuration>
-        </execution>
-      </executions>
     </plugin>
     <plugin>
       <groupId>org.apache.maven.plugins</groupId>
@@ -262,7 +215,16 @@
   </dependencies>
 
 
-  <scm>
+    <distributionManagement>
+        <repository>
+            <uniqueVersion>false</uniqueVersion>
+            <id>jenkins.dataone.org</id>
+            <name>DataONE</name>
+            <url>${url}</url>
+            <layout>default</layout>
+        </repository>
+    </distributionManagement>
+  <!-- <scm>
     <url>https://github.com/DataONEorg/speed-bagit</url>
     <connection>scm:git:ssh://github.com:DataONEorg/speed-bagit.git</connection>
     <developerConnection>scm:git:ssh://git@github.com:DataONEorg/speed-bagit.git</developerConnection>
@@ -277,7 +239,7 @@
       <id>ossrh</id>
       <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
     </repository>
-  </distributionManagement>
+  </distributionManagement>-->
   <licenses>
     <license>
       <name>Apache License, Version 2.0</name>
