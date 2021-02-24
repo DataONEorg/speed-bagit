@@ -178,7 +178,7 @@
     <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-deploy-plugin</artifactId>
-        <version>${maven.deploy.version}</version>
+        <version>3.0.0-M1</version>
         <executions>
             <execution>
                 <id>deploy-file</id>
