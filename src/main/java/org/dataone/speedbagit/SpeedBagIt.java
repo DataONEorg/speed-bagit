@@ -25,6 +25,8 @@ package org.dataone.speedbagit;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.PipedInputStream;
+import java.io.PipedOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -39,13 +41,14 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-
 
 /**
  *  The main interface for creating a BagIt compliant zip file. The SpeedBagIt class
@@ -74,6 +77,17 @@ public class SpeedBagIt {
     // A list holding all of the files in the bag
     private List<SpeedFile> dataFiles;
     private List<SpeedFile> tagFiles;
+    
+    // An ExecutorService to run the piped stream in another thread
+    private static ExecutorService executor = null;
+    static {
+        // use a shared executor service with nThreads == one less than available processors
+        int availableProcessors = Runtime.getRuntime().availableProcessors();
+        int nThreads = availableProcessors * 1;
+        nThreads--;
+        nThreads = Math.max(1, nThreads);
+        executor = Executors.newFixedThreadPool(nThreads);  
+    }
 
     /**
      * Creates a new instance of a SpeedBagIt. This constructor supports adding
@@ -265,70 +279,86 @@ public class SpeedBagIt {
      * @throws IOException Throws when something went wrong with streaming the bag
      * @throws NoSuchAlgorithmException Thrown when an unsupported checksum algorithm is used
      */
-    public void stream(ZipOutputStream zos)
+    public InputStream stream()
             throws IOException, NoSuchAlgorithmException {
-        String timeStamp = new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss").format(new Date());
-        logger.info(String.format("Streaming bag at %s", timeStamp));
-        int totalSize = 0;
-        // Stream all of the files in the root 'data' directory
+        PipedOutputStream ps = new PipedOutputStream();
+        PipedInputStream is = new PipedInputStream(ps);
+        ZipOutputStream zos = new ZipOutputStream(ps);
 
-        for (SpeedFile streamingFile : this.dataFiles) {
-            try {
-                this.streamFile(zos, streamingFile);
-                String checksum = new String(streamingFile.getStream().getChecksum());
-                this.writeToDataManifest(streamingFile.getPath(), checksum);
-                totalSize += streamingFile.getStream().getSize();
-            } finally {
-                streamingFile.getStream().close();
-            }
+        executor.execute(
+            new Runnable() {
+                public void run() {
+                    try {
+                        String timeStamp = new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss").format(new Date());
+                        logger.info(String.format("Streaming bag at %s", timeStamp));
+                        int totalSize = 0;
+                        // Stream all of the files in the root 'data' directory
 
-        }
-        String payloadOxum =  String.format("%s.%s",totalSize, this.dataFiles.size());
-        // Generate and add the bagit.txt file
-        InputStream bagTextStream = new ByteArrayInputStream(this.generateBagitTxt().getBytes(StandardCharsets.UTF_8));
-        String bagitFileName = this.properties.getProperty("bagit.file.name");
-        this.addFile(bagTextStream, bagitFileName, MessageDigest.getInstance(checksumAlgorithm), true);
+                        for (SpeedFile streamingFile : dataFiles) {
+                            try {
+                               streamFile(zos, streamingFile);
+                                String checksum = new String(streamingFile.getStream().getChecksum());
+                                writeToDataManifest(streamingFile.getPath(), checksum);
+                                totalSize += streamingFile.getStream().getSize();
+                            } finally {
+                                streamingFile.getStream().close();
+                            }
 
-
-        // Generate and add the bag-info.txt file
-        String bagInfoFile = generateBagInfoTxt(payloadOxum, totalSize);
-        InputStream fileStream = new ByteArrayInputStream(bagInfoFile.getBytes(StandardCharsets.UTF_8));
-        String bagitInfoFileName = this.properties.getProperty("bag.info.file.name");
-        this.addFile(fileStream, bagitInfoFileName, MessageDigest.getInstance(checksumAlgorithm), true);
-
-        // Generate and add the data manifest file
-        String dataManifest = bagFileToString(this.dataManifestFile);
-        String fileName = String.format("manifest-%s.txt", this.checksumAlgorithm);
-        fileStream = new ByteArrayInputStream(dataManifest.getBytes(StandardCharsets.UTF_8));
-        this.addFile(fileStream, fileName, MessageDigest.getInstance(checksumAlgorithm), true);
-
-        // Write all of the tag files
-        for (SpeedFile streamingFile : this.tagFiles) {
-            try {
-                this.streamFile(zos, streamingFile);
-                String checksum = streamingFile.getStream().getChecksum();
-                this.writeToTagManifest(streamingFile.getPath(), checksum);
-            } finally {
-                streamingFile.getStream().close();
-            }
-        }
-
-        // Create the tag manifest and stream it
+                        }
+                        String payloadOxum =  String.format("%s.%s",totalSize, dataFiles.size());
+                        // Generate and add the bagit.txt file
+                        InputStream bagTextStream = new ByteArrayInputStream(generateBagitTxt().getBytes(StandardCharsets.UTF_8));
+                        String bagitFileName = properties.getProperty("bagit.file.name");
+                        addFile(bagTextStream, bagitFileName, MessageDigest.getInstance(checksumAlgorithm), true);
 
 
-        String tagMannifest = bagFileToString(this.tagManifestFile);
-        fileStream = new ByteArrayInputStream(tagMannifest.getBytes(StandardCharsets.UTF_8));
-        fileName = String.format("tagmanifest-%s.txt", this.checksumAlgorithm);
-        SpeedFile tagManifestStreamFile = new SpeedFile(new SpeedStream(fileStream,
-                MessageDigest.getInstance(this.checksumAlgorithm)), fileName, true);
-        try {
-            this.streamFile(zos, tagManifestStreamFile);
-        } finally {
-            tagManifestStreamFile.getStream().close();
-        }
-        zos.close();
-        timeStamp = new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss").format(new Date());
-        logger.info(String.format("Finished streaming bag at %s", timeStamp));
+                        // Generate and add the bag-info.txt file
+                        String bagInfoFile = generateBagInfoTxt(payloadOxum, totalSize);
+                        InputStream fileStream = new ByteArrayInputStream(bagInfoFile.getBytes(StandardCharsets.UTF_8));
+                        String bagitInfoFileName = properties.getProperty("bag.info.file.name");
+                        addFile(fileStream, bagitInfoFileName, MessageDigest.getInstance(checksumAlgorithm), true);
+
+                        // Generate and add the data manifest file
+                        String dataManifest = bagFileToString(dataManifestFile);
+                        String fileName = String.format("manifest-%s.txt", checksumAlgorithm);
+                        fileStream = new ByteArrayInputStream(dataManifest.getBytes(StandardCharsets.UTF_8));
+                        addFile(fileStream, fileName, MessageDigest.getInstance(checksumAlgorithm), true);
+
+                        // Write all of the tag files
+                        for (SpeedFile streamingFile : tagFiles) {
+                            try {
+                                streamFile(zos, streamingFile);
+                                String checksum = streamingFile.getStream().getChecksum();
+                                writeToTagManifest(streamingFile.getPath(), checksum);
+                            } finally {
+                                streamingFile.getStream().close();
+                            }
+                        }
+
+                        // Create the tag manifest and stream it
+
+
+                        String tagMannifest = bagFileToString(tagManifestFile);
+                        fileStream = new ByteArrayInputStream(tagMannifest.getBytes(StandardCharsets.UTF_8));
+                        fileName = String.format("tagmanifest-%s.txt", checksumAlgorithm);
+                        SpeedFile tagManifestStreamFile = new SpeedFile(new SpeedStream(fileStream,
+                                MessageDigest.getInstance(checksumAlgorithm)), fileName, true);
+                        try {
+                            streamFile(zos, tagManifestStreamFile);
+                        } finally {
+                            tagManifestStreamFile.getStream().close();
+                        }
+                        zos.close();
+                        timeStamp = new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss").format(new Date());
+                        logger.info(String.format("Finished streaming bag at %s", timeStamp));
+                        
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                    
+                }
+            });
+        return is;
     }
 
     /**

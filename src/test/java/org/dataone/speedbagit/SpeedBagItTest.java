@@ -23,7 +23,6 @@
 package org.dataone.speedbagit;
 
 import java.io.ByteArrayInputStream;
-import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
 import java.io.FileOutputStream;
 import java.io.InputStream;
@@ -44,10 +43,10 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.zip.ZipOutputStream;
 import java.util.zip.ZipEntry;
 
 import org.junit.jupiter.api.io.TempDir;
+import org.apache.commons.io.IOUtils;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -288,9 +287,10 @@ public class SpeedBagItTest {
             Path bagPath = Paths.get(directory.toString() + "emptyBag.zip");
             bagFilePath = Files.createFile(bagPath);
             FileOutputStream fos = new FileOutputStream(bagFilePath.toString());
-            ZipOutputStream out = new ZipOutputStream(new BufferedOutputStream(fos));
-            bag.stream(out);
+            InputStream bagStream = bag.stream();
+            IOUtils.copy(bagStream, fos);
         } catch (IOException | NoSuchAlgorithmException e) {
+            e.printStackTrace();
             if (bagFilePath != null) {
                 Files.delete(bagFilePath);
             }
@@ -376,8 +376,8 @@ public class SpeedBagItTest {
             Path bagPath = Paths.get(directory.toString() + "dataBag.zip");
             bagFilePath = Files.createFile(bagPath);
             FileOutputStream fos = new FileOutputStream(bagFilePath.toString());
-            ZipOutputStream out = new ZipOutputStream(new BufferedOutputStream(fos));
-            bag.stream(out);
+            InputStream bagStream = bag.stream();
+            IOUtils.copy(bagStream, fos);
 
             // Open to bag to read
             ZipFile zipFile = new ZipFile(bagFilePath.toString());
@@ -390,6 +390,7 @@ public class SpeedBagItTest {
         }
     }
 
+    
     @Test
     public void testMetadataBagExport() {
         double bagVersion = 1.0;
@@ -416,8 +417,8 @@ public class SpeedBagItTest {
             Path bagPath = Paths.get(directory.toString() + "metadataBag.zip");
             bagFilePath = Files.createFile(bagPath);
             FileOutputStream fos = new FileOutputStream(bagFilePath.toString());
-            ZipOutputStream out = new ZipOutputStream(new BufferedOutputStream(fos));
-            bag.stream(out);
+            InputStream bagStream = bag.stream();
+            IOUtils.copy(bagStream, fos);
             // Open to bag to read
             ZipFile zipFile = new ZipFile(bagFilePath.toString());
             // Make sure that the bag files are correct
