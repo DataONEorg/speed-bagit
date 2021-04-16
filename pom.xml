@@ -5,7 +5,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>org.dataone</groupId>
   <artifactId>speedbagit</artifactId>
-  <version>1.0-SNAPSHOT</version>
+  <version>1.0</version>
   <packaging>jar</packaging>
   <name>speedbagit</name>
   <url>http://maven.apache.org</url>
@@ -214,22 +214,13 @@
     </dependency>
   </dependencies>
 
-
-    <distributionManagement>
-        <repository>
-            <uniqueVersion>false</uniqueVersion>
-            <id>jenkins.dataone.org</id>
-            <name>DataONE</name>
-            <url>${url}</url>
-            <layout>default</layout>
-        </repository>
-    </distributionManagement>
-  <!-- <scm>
+  <scm>
     <url>https://github.com/DataONEorg/speed-bagit</url>
     <connection>scm:git:ssh://github.com:DataONEorg/speed-bagit.git</connection>
     <developerConnection>scm:git:ssh://git@github.com:DataONEorg/speed-bagit.git</developerConnection>
     <tag>HEAD</tag>
   </scm>
+
   <distributionManagement>
     <snapshotRepository>
       <id>ossrh</id>
@@ -239,7 +230,8 @@
       <id>ossrh</id>
       <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
     </repository>
-  </distributionManagement>-->
+  </distributionManagement>
+
   <licenses>
     <license>
       <name>Apache License, Version 2.0</name>
