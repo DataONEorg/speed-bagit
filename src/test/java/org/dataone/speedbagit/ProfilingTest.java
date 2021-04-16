@@ -22,10 +22,12 @@
 
 package org.dataone.speedbagit;
 
+import org.apache.commons.io.IOUtils;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.FileNotFoundException;
 import java.io.File;
 import java.io.FileInputStream;
@@ -134,8 +136,7 @@ public class ProfilingTest {
 		Path bagFilePath = Files.createFile(Paths.get(bagPath));
 		// Create a stream for SpeedBagIt to write to
 		FileOutputStream fos = new FileOutputStream(bagFilePath.toString());
-		ZipOutputStream out = new ZipOutputStream(new BufferedOutputStream(fos));
-		// Stream the bag
-		bag.stream(out);
+		InputStream bagStream = bag.stream();
+        IOUtils.copy(bagStream, fos);
 	}
 }
