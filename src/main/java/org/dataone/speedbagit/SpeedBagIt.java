@@ -206,7 +206,7 @@ public class SpeedBagIt {
         String bagInfoDateKey = this.properties.getProperty("bag.info.date");
         String bagInfo = String.format("%s: %s\n", bagInfoDateKey, dateFormat.format(dateTime));
         String bagInfoPayloadOxum = this.properties.getProperty("bag.info.payloadOxum");
-        bagInfo = String.format("%s%sPayload-Oxum: %s\n", bagInfo, bagInfoPayloadOxum, payloadOxum);
+        bagInfo = String.format("%s%s: %s\n", bagInfo, bagInfoPayloadOxum, payloadOxum);
         String bagInfoBagSize = this.properties.getProperty("bag.info.bagSize");
         bagInfo = String.format("%s%s: %s\n", bagInfo, bagInfoBagSize, formatSize(bagSize));
         return bagInfo;
