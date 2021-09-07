@@ -214,21 +214,13 @@
     </dependency>
   </dependencies>
 
-  <scm>
-    <url>https://github.com/DataONEorg/speed-bagit</url>
-    <connection>scm:git:ssh://github.com:DataONEorg/speed-bagit.git</connection>
-    <developerConnection>scm:git:ssh://git@github.com:DataONEorg/speed-bagit.git</developerConnection>
-    <tag>HEAD</tag>
-  </scm>
-
   <distributionManagement>
-    <snapshotRepository>
-      <id>ossrh</id>
-      <url>https://oss.sonatype.org/content/repositories/snapshots</url>
-    </snapshotRepository>
     <repository>
-      <id>ossrh</id>
-      <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+      <uniqueVersion>false</uniqueVersion>
+        <id>jenkins.dataone.org</id>
+        <name>DataONE</name>
+        <url>${url}</url>
+        <layout>default</layout>
     </repository>
   </distributionManagement>
 
