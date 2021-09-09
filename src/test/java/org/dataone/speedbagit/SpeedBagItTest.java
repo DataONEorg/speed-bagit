@@ -23,9 +23,10 @@
 package org.dataone.speedbagit;
 
 import java.io.ByteArrayInputStream;
-import java.io.BufferedOutputStream;
+import java.io.BufferedReader;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.StringReader;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -42,10 +43,10 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.zip.ZipOutputStream;
 import java.util.zip.ZipEntry;
 
 import org.junit.jupiter.api.io.TempDir;
+import org.apache.commons.io.IOUtils;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -62,15 +63,18 @@ public class SpeedBagItTest {
     public SpeedBagItTest() throws IOException {
     }
 
-    private void validateBagitFile(String contents, double bagVersion) {
-        contents.lines().forEach(line -> {
+    private void validateBagitFile(String contents, double bagVersion) throws IOException {
+    	BufferedReader bufReader = new BufferedReader(new StringReader(contents));
+    	String line=null;
+    	while( (line=bufReader.readLine()) != null )
+    	{
             String[] keyPair = line.split(": ");
             if (keyPair[0].equals("BagIt-Version")) {
                 assertEquals(keyPair[1], String.valueOf(bagVersion));
             } else if (keyPair[0].equals("Tag-File-Character-Encoding")) {
                 assertEquals(keyPair[1], "UTF-8");
             }
-        });
+    	}
     }
 
     /**
@@ -79,9 +83,13 @@ public class SpeedBagItTest {
      * @param contents:   The contents of the file
      * @param zipFile: The version of the bag
      * @param dataFileCount: The number of files in the data/ directory
+     * @throws IOException 
      */
-    private void validateBagInfoFile(String contents, ZipFile zipFile, int dataFileCount) {
-        contents.lines().forEach(line -> {
+    private void validateBagInfoFile(String contents, ZipFile zipFile, int dataFileCount) throws IOException {
+    	BufferedReader bufReader = new BufferedReader(new StringReader(contents));
+    	String line=null;
+    	while( (line=bufReader.readLine()) != null )
+    	{
             String[] keyPair = line.split(": ");
             switch (keyPair[0]) {
                 case "Payload-Oxum":
@@ -97,7 +105,7 @@ public class SpeedBagItTest {
                     assertEquals(keyPair[1], dateFormat.format(dateTime));
                     break;
             }
-        });
+    	}
     }
 
     static String convertStreamToString(java.io.InputStream is) {
@@ -191,12 +199,16 @@ public class SpeedBagItTest {
         minimumMetadata.put("version", String.valueOf(bagVersion));
         minimumMetadata.put("Tag-File-Character-Encoding", "UTF-8");
 
-        bagitTxtFile.lines().forEach(line -> {
+    	BufferedReader bufReader = new BufferedReader(new StringReader(bagitTxtFile));
+    	String line=null;
+    	while( (line=bufReader.readLine()) != null )
+    	{
             String[] keyPair = line.split(": ");
             String key = minimumMetadata.get(keyPair[0]);
             String value = minimumMetadata.get(keyPair[1]);
             assertEquals(minimumMetadata.get(key), value);
-        });
+    		
+    	}
     }
 
     /**
@@ -221,13 +233,15 @@ public class SpeedBagItTest {
 
         // Generate the text for the bagit.txt file
         String bagitTxtFile = bag.generateBagitTxt();
-
-        bagitTxtFile.lines().forEach(line -> {
+    	BufferedReader bufReader = new BufferedReader(new StringReader(bagitTxtFile));
+    	String line=null;
+    	while( (line=bufReader.readLine()) != null )
+        {
             String[] keyPair = line.split(": ");
             String key = bagMetadata.get(keyPair[0]);
             String value = bagMetadata.get(keyPair[1]);
             assertEquals(bagMetadata.get(key), value);
-        });
+        }
     }
 
     /**
@@ -273,9 +287,10 @@ public class SpeedBagItTest {
             Path bagPath = Paths.get(directory.toString() + "emptyBag.zip");
             bagFilePath = Files.createFile(bagPath);
             FileOutputStream fos = new FileOutputStream(bagFilePath.toString());
-            ZipOutputStream out = new ZipOutputStream(new BufferedOutputStream(fos));
-            bag.stream(out);
+            InputStream bagStream = bag.stream();
+            IOUtils.copy(bagStream, fos);
         } catch (IOException | NoSuchAlgorithmException e) {
+            e.printStackTrace();
             if (bagFilePath != null) {
                 Files.delete(bagFilePath);
             }
@@ -361,8 +376,8 @@ public class SpeedBagItTest {
             Path bagPath = Paths.get(directory.toString() + "dataBag.zip");
             bagFilePath = Files.createFile(bagPath);
             FileOutputStream fos = new FileOutputStream(bagFilePath.toString());
-            ZipOutputStream out = new ZipOutputStream(new BufferedOutputStream(fos));
-            bag.stream(out);
+            InputStream bagStream = bag.stream();
+            IOUtils.copy(bagStream, fos);
 
             // Open to bag to read
             ZipFile zipFile = new ZipFile(bagFilePath.toString());
@@ -375,6 +390,7 @@ public class SpeedBagItTest {
         }
     }
 
+    
     @Test
     public void testMetadataBagExport() {
         double bagVersion = 1.0;
@@ -401,8 +417,8 @@ public class SpeedBagItTest {
             Path bagPath = Paths.get(directory.toString() + "metadataBag.zip");
             bagFilePath = Files.createFile(bagPath);
             FileOutputStream fos = new FileOutputStream(bagFilePath.toString());
-            ZipOutputStream out = new ZipOutputStream(new BufferedOutputStream(fos));
-            bag.stream(out);
+            InputStream bagStream = bag.stream();
+            IOUtils.copy(bagStream, fos);
             // Open to bag to read
             ZipFile zipFile = new ZipFile(bagFilePath.toString());
             // Make sure that the bag files are correct
