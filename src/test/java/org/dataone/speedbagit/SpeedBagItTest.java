@@ -390,7 +390,46 @@ public class SpeedBagItTest {
         }
     }
 
-    
+
+    @Test
+    public void testDataBagExportDuplicateFilename() {
+        double bagVersion = 1.0;
+        String checksumAlgorithm = "MD5";
+        Map<String, String> bagMetadata = new HashMap<>();
+
+        SpeedBagIt bag ;
+        Path bagFilePath;
+        try {
+            bag = new SpeedBagIt(bagVersion, checksumAlgorithm, bagMetadata);
+
+            String dataFile1 = "1234, 9876, 3845";
+            String dataFile2 = "1234, 9876, 38";
+
+            // Simulate getting a stream to those bytes and adding them to the bag
+            InputStream dataFileStream1 = new ByteArrayInputStream(dataFile1.getBytes(StandardCharsets.UTF_8));
+            InputStream dataFileStream2 = new ByteArrayInputStream(dataFile2.getBytes(StandardCharsets.UTF_8));
+            bag.addFile(dataFileStream1, "data/data_file1.csv", MessageDigest.getInstance("MD5"), false);
+            bag.addFile(dataFileStream2, "data/data_file1.csv", MessageDigest.getInstance("MD5"), false);
+
+            Path bagPath = Paths.get(directory.toString() + "dataBag.zip");
+            bagFilePath = Files.createFile(bagPath);
+            FileOutputStream fos = new FileOutputStream(bagFilePath.toString());
+            InputStream bagStream = bag.stream();
+            IOUtils.copy(bagStream, fos);
+
+            // Open to bag to read
+            ZipFile zipFile = new ZipFile(bagFilePath.toString());
+            // Make sure that the bag files are correct
+            this.validateBagItFiles(zipFile, bagVersion, bag.getPayloadFileCount());
+            Files.delete(bagFilePath);
+
+        } catch (IOException | NoSuchAlgorithmException e) {
+            fail(e);
+        }
+        fail("java.util.zip.ZipException should have thrown");
+    }
+
+
     @Test
     public void testMetadataBagExport() {
         double bagVersion = 1.0;
