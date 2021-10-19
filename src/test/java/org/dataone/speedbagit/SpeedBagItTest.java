@@ -44,6 +44,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.zip.ZipEntry;
+import java.util.zip.ZipException;
 
 import org.junit.jupiter.api.io.TempDir;
 import org.apache.commons.io.IOUtils;
@@ -423,7 +424,9 @@ public class SpeedBagItTest {
             this.validateBagItFiles(zipFile, bagVersion, bag.getPayloadFileCount());
             Files.delete(bagFilePath);
 
-        } catch (IOException | NoSuchAlgorithmException e) {
+        } catch (IOException e) {
+            return;
+        } catch (NoSuchAlgorithmException e) {
             fail(e);
         }
         fail("java.util.zip.ZipException should have thrown");
