@@ -275,7 +275,6 @@ public class SpeedBagIt {
      * Writes the files to a stream under the BagIt specification. The manifest, bagit.txt,
      * and bag.info are generated inside.
      *
-     * @param zos: The output stream that represents the streaming bag
      * @throws IOException Throws when something went wrong with streaming the bag
      * @throws NoSuchAlgorithmException Thrown when an unsupported checksum algorithm is used
      */
@@ -296,14 +295,13 @@ public class SpeedBagIt {
 
                         for (SpeedFile streamingFile : dataFiles) {
                             try {
-                               streamFile(zos, streamingFile);
+                                streamFile(zos, streamingFile);
                                 String checksum = new String(streamingFile.getStream().getChecksum());
                                 writeToDataManifest(streamingFile.getPath(), checksum);
                                 totalSize += streamingFile.getStream().getSize();
                             } finally {
                                 streamingFile.getStream().close();
                             }
-
                         }
                         String payloadOxum =  String.format("%s.%s",totalSize, dataFiles.size());
                         // Generate and add the bagit.txt file
@@ -318,9 +316,12 @@ public class SpeedBagIt {
                         String bagitInfoFileName = properties.getProperty("bag.info.file.name");
                         addFile(fileStream, bagitInfoFileName, MessageDigest.getInstance(checksumAlgorithm), true);
 
+                        // BagIt requires checksum filenames to be lower cased and without dashes
+                        String sanitizedChecksum = checksumAlgorithm.toLowerCase();
+                        sanitizedChecksum = sanitizedChecksum.replaceAll("[^A-Za-z0-9]", "");
                         // Generate and add the data manifest file
                         String dataManifest = bagFileToString(dataManifestFile);
-                        String fileName = String.format("manifest-%s.txt", checksumAlgorithm);
+                        String fileName = String.format("manifest-%s.txt", sanitizedChecksum);
                         fileStream = new ByteArrayInputStream(dataManifest.getBytes(StandardCharsets.UTF_8));
                         addFile(fileStream, fileName, MessageDigest.getInstance(checksumAlgorithm), true);
 
@@ -336,11 +337,9 @@ public class SpeedBagIt {
                         }
 
                         // Create the tag manifest and stream it
-
-
                         String tagMannifest = bagFileToString(tagManifestFile);
                         fileStream = new ByteArrayInputStream(tagMannifest.getBytes(StandardCharsets.UTF_8));
-                        fileName = String.format("tagmanifest-%s.txt", checksumAlgorithm);
+                        fileName = String.format("tagmanifest-%s.txt", sanitizedChecksum);
                         SpeedFile tagManifestStreamFile = new SpeedFile(new SpeedStream(fileStream,
                                 MessageDigest.getInstance(checksumAlgorithm)), fileName, true);
                         try {
@@ -355,7 +354,6 @@ public class SpeedBagIt {
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
-                    
                 }
             });
         return is;

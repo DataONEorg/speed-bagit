@@ -390,7 +390,6 @@ public class SpeedBagItTest {
         }
     }
 
-    
     @Test
     public void testMetadataBagExport() {
         double bagVersion = 1.0;
