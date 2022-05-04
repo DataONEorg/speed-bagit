@@ -51,6 +51,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
 
+
 /**
  * Unit tests for the SpeedBagIt class. Because this class is the main interface for
  * creating bags, most integrated unit tests are in this file.
@@ -135,7 +136,7 @@ public class SpeedBagItTest {
      * Helper method that creates a stock Bag
      * @return The SpeedBag object
      */
-    public SpeedBagIt getStockBag() throws SpeedBagException, NoSuchAlgorithmException, IOException {
+    public SpeedBagIt getStockBag() throws NoSuchAlgorithmException, IOException {
         double bagVersion = 1.0;
         String checksumAlgorithm = "MD5";
         Map<String, String> bagMetadata = new HashMap<>();
@@ -250,23 +251,35 @@ public class SpeedBagItTest {
      * @param zipFile:    The bag being validated
      * @param bagVersion: The version of the bag
      * @param dataFileCount: The number of files in the data/ directory
+     * @param checksum: The checksum used to bag the data
      */
-    private void validateBagItFiles(ZipFile zipFile, double bagVersion, int dataFileCount) throws IOException {
-        // Process each of the bag metadata files
+    private void validateBagItFiles(ZipFile zipFile, double bagVersion, int dataFileCount, String checksum)
+            throws IOException {
+        // Process each of the bag metadata files and validate them. Also make sure that the
+        // manifest files are named properly
+        boolean foundManifest = false;
+        boolean foundTagManifest = false;
+        // Create the filenames for the checksum files
+        String manifestName = "manifest-"+checksum.toLowerCase()+".txt";
+        String tagManifestName = "tagmanifest-"+checksum.toLowerCase()+".txt";
         Enumeration<? extends ZipEntry> entries = zipFile.entries();
         while (entries.hasMoreElements()) {
             ZipEntry entry = entries.nextElement();
             InputStream fileStream = zipFile.getInputStream(entry);
             String contents = convertStreamToString(fileStream);
-            switch (entry.getName()) {
-                case "bag-info.txt":
-                    this.validateBagInfoFile(contents, zipFile, dataFileCount);
-                    break;
-                case "bagit.txt":
-                    this.validateBagitFile(contents, bagVersion);
-                    break;
+            String entryName = entry.getName();
+            if (entryName.equals("bag-info.txt")) {
+                this.validateBagInfoFile(contents, zipFile, dataFileCount);
+            } else if(entryName.equals("bagit.txt")) {
+                this.validateBagitFile(contents, bagVersion);
+            } else if (entryName.equals(manifestName)) {
+                foundManifest = true;
+            } else if (entryName.equals(tagManifestName)) {
+                foundTagManifest = true;
             }
         }
+        assertTrue(foundManifest);
+        assertTrue(foundTagManifest);
     }
 
     /**
@@ -299,8 +312,9 @@ public class SpeedBagItTest {
 
         // Open to bag to read
         ZipFile zipFile = new ZipFile(bagFilePath.toString());
-        this.validateBagItFiles(zipFile, bagVersion, bag.getPayloadFileCount());
+        this.validateBagItFiles(zipFile, bagVersion, bag.getPayloadFileCount(), checksumAlgorithm);
         Files.delete(bagFilePath);
+
     }
 
     /**
@@ -382,7 +396,7 @@ public class SpeedBagItTest {
             // Open to bag to read
             ZipFile zipFile = new ZipFile(bagFilePath.toString());
             // Make sure that the bag files are correct
-            this.validateBagItFiles(zipFile, bagVersion, bag.getPayloadFileCount());
+            this.validateBagItFiles(zipFile, bagVersion, bag.getPayloadFileCount(), checksumAlgorithm);
             Files.delete(bagFilePath);
 
         } catch (IOException | NoSuchAlgorithmException e) {
@@ -390,7 +404,6 @@ public class SpeedBagItTest {
         }
     }
 
-    
     @Test
     public void testMetadataBagExport() {
         double bagVersion = 1.0;
@@ -410,9 +423,12 @@ public class SpeedBagItTest {
             InputStream dataFileStream1 = new ByteArrayInputStream(metadataFile1.getBytes(StandardCharsets.UTF_8));
             InputStream dataFileStream2 = new ByteArrayInputStream(metadataFile2.getBytes(StandardCharsets.UTF_8));
             InputStream dataFileStream3 = new ByteArrayInputStream(metadataFile3.getBytes(StandardCharsets.UTF_8));
-            bag.addFile(dataFileStream1, "metadata/metadataFile1.csv", MessageDigest.getInstance("MD5"), true);
-            bag.addFile(dataFileStream2, "metadata/metadataFile2.csv", MessageDigest.getInstance("MD5"), true);
-            bag.addFile(dataFileStream3, "metadata/metadataFile3.csv", MessageDigest.getInstance("MD5"), true);
+            bag.addFile(dataFileStream1, "metadata/metadataFile1.csv",
+                    MessageDigest.getInstance(checksumAlgorithm), true);
+            bag.addFile(dataFileStream2, "metadata/metadataFile2.csv",
+                    MessageDigest.getInstance(checksumAlgorithm), true);
+            bag.addFile(dataFileStream3, "metadata/metadataFile3.csv",
+                    MessageDigest.getInstance(checksumAlgorithm), true);
 
             Path bagPath = Paths.get(directory.toString() + "metadataBag.zip");
             bagFilePath = Files.createFile(bagPath);
@@ -422,9 +438,8 @@ public class SpeedBagItTest {
             // Open to bag to read
             ZipFile zipFile = new ZipFile(bagFilePath.toString());
             // Make sure that the bag files are correct
-            this.validateBagItFiles(zipFile, bagVersion, bag.getPayloadFileCount());
+            this.validateBagItFiles(zipFile, bagVersion, bag.getPayloadFileCount(), checksumAlgorithm);
             Files.delete(bagFilePath);
-
         } catch (IOException | NoSuchAlgorithmException e) {
             fail(e);
         }
