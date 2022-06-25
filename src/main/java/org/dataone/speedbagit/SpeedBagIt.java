@@ -83,7 +83,7 @@ public class SpeedBagIt {
     static {
         // use a shared executor service with nThreads == one less than available processors
         int availableProcessors = Runtime.getRuntime().availableProcessors();
-        int nThreads = availableProcessors * 1;
+        int nThreads = availableProcessors *- 1;
         nThreads--;
         nThreads = Math.max(1, nThreads);
         executor = Executors.newFixedThreadPool(nThreads);  
@@ -350,7 +350,7 @@ public class SpeedBagIt {
                         zos.close();
                         timeStamp = new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss").format(new Date());
                         logger.info(String.format("Finished streaming bag at %s", timeStamp));
-                        
+
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
