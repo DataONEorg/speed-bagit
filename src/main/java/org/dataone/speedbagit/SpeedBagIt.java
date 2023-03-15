@@ -128,7 +128,6 @@ public class SpeedBagIt {
         this.dataManifestFile = new HashMap<> ();
         this.tagManifestFile = new HashMap<> ();
 
-
         this.properties = new Properties();
         this.properties.load(Objects.requireNonNull(this.getClass().
                 getClassLoader().getResourceAsStream("speed-bagit.properties")));
@@ -138,19 +137,51 @@ public class SpeedBagIt {
      * Adds a stream of data to the bag.
      *
      * @param file:      The stream representing a file or data that will be placed in the bag
-     * @param bagPath:      The path, relative to the bag root where the file belongs
-     * @param checksum: A MessageDigest object that will hold the checksum
+     * @param bagPath:   The path, relative to the bag root where the file belongs
+     * @param checksum:  A MessageDigest object that will hold the checksum
      * @param isTagFile: Boolean set to True when the file is a tag file
      */
-    public void addFile(InputStream file, String bagPath, MessageDigest checksum, boolean isTagFile) {
+    public void addFile(InputStream file, String bagPath, MessageDigest checksum, boolean isTagFile)
+            throws SpeedBagException {
         logger.debug(String.format("Adding %s to the bag", bagPath));
-        SpeedFile newFile = new SpeedFile(new SpeedStream(file, checksum), bagPath, isTagFile);
-        if (isTagFile) {
-            this.tagFiles.add(newFile);
-        } else {
-            this.dataFiles.add(newFile);
+        // Check to see if there's a path conflict
+        if (this.hasPathCollisions(bagPath, isTagFile)) {
+            throw new SpeedBagException(
+                    String.format("The tag file with path %s conflicts with another file.", bagPath)
+            );
         }
-    }
+        SpeedFile newFile = new SpeedFile(new SpeedStream(file, checksum), bagPath, isTagFile);
+            if (isTagFile) {
+                this.tagFiles.add(newFile);
+            } else {
+                this.dataFiles.add(newFile);
+            }
+        }
+
+        /**
+         * Checks whether two paths collide, based on their file type (tag vs data file).
+         *
+         * @param path:  Path being checked against the previously added files
+         * @param isTagFile: A flag whether the file is a data file or not (otherwise it will be a tag)
+         */
+        private boolean hasPathCollisions(String path, boolean isTagFile) {
+            if (isTagFile) {
+                for (SpeedFile tagFile : this.tagFiles) {
+                    if (Objects.equals(tagFile.getPath(), path)) {
+                        return true;
+                    }
+                }
+            } else {
+                for (SpeedFile dataFile : this.dataFiles) {
+                    if (Objects.equals(dataFile.getPath(), path)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+
 
     /**
      * Adds a stream of data to the bag.
@@ -159,15 +190,10 @@ public class SpeedBagIt {
      * @param bagPath:      The path, relative to the bag root where the file belongs
      * @param isTagFile: Boolean set to True when the file is a tag file
      */
-    public void addFile(InputStream file, String bagPath, boolean isTagFile) throws NoSuchAlgorithmException {
+    public void addFile(InputStream file, String bagPath, boolean isTagFile) throws NoSuchAlgorithmException, SpeedBagException {
         logger.debug(String.format("Adding %s to the bag", bagPath));
         MessageDigest newDigest = MessageDigest.getInstance(this.checksumAlgorithm);
-        SpeedFile newFile = new SpeedFile(new SpeedStream(file, newDigest), bagPath, isTagFile);
-        if (isTagFile) {
-            this.tagFiles.add(newFile);
-        } else {
-            this.dataFiles.add(newFile);
-        }
+        this.addFile(file, bagPath, newDigest, isTagFile);
     }
 
     /**
@@ -399,3 +425,4 @@ public class SpeedBagIt {
         return builder.toString();
     }
 }
+

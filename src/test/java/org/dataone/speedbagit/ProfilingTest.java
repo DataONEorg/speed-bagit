@@ -54,7 +54,7 @@ public class ProfilingTest {
 	 */
 	@Test
 	@Disabled
-	public void testLargeFiles() throws IOException, NoSuchAlgorithmException {
+	public void testLargeFiles() throws IOException, NoSuchAlgorithmException, SpeedBagException {
 		// Create 100, 1GB files
 		GenerateFiles("largeFiles/", 100, 1000000000L);
 		CreateBag("largeFiles/", "./bagged_data.zip");
@@ -66,7 +66,7 @@ public class ProfilingTest {
 	 */
 	@Test
 	@Disabled
-	public void testSmallFiles() throws IOException, NoSuchAlgorithmException {
+	public void testSmallFiles() throws IOException, NoSuchAlgorithmException, SpeedBagException {
 		GenerateFiles("smallFiles/", 5000, 1000);
 		CreateBag("smallFiles/", "./bagged_data.zip");
 	}
@@ -118,7 +118,7 @@ public class ProfilingTest {
 	 * @param PayloadPath The path to the data directory that will be bagged
 	 * @param bagPath The path to the bagit archive that will be created
 	 */
-	public static void CreateBag(String PayloadPath, String bagPath) throws IOException, NoSuchAlgorithmException {
+	public static void CreateBag(String PayloadPath, String bagPath) throws IOException, NoSuchAlgorithmException, SpeedBagException {
 		SpeedBagIt bag = new SpeedBagIt(1.0, "MD5");
 		File dataDirectory = new File(PayloadPath);
 		File[] directoryListing = dataDirectory.listFiles();
@@ -140,3 +140,4 @@ public class ProfilingTest {
         IOUtils.copy(bagStream, fos);
 	}
 }
+

@@ -48,9 +48,11 @@ import java.util.zip.ZipEntry;
 import org.junit.jupiter.api.io.TempDir;
 import org.apache.commons.io.IOUtils;
 import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
+
 
 
 /**
@@ -137,7 +139,7 @@ public class SpeedBagItTest {
      * Helper method that creates a stock Bag
      * @return The SpeedBag object
      */
-    public SpeedBagIt getStockBag() throws NoSuchAlgorithmException, IOException {
+    public SpeedBagIt getStockBag() throws NoSuchAlgorithmException, IOException, SpeedBagException {
         double bagVersion = 1.0;
         String checksumAlgorithm = "MD5";
         Map<String, String> bagMetadata = new HashMap<>();
@@ -400,7 +402,7 @@ public class SpeedBagItTest {
             this.validateBagItFiles(zipFile, bagVersion, bag.getPayloadFileCount(), checksumAlgorithm);
             Files.delete(bagFilePath);
 
-        } catch (IOException | NoSuchAlgorithmException e) {
+        } catch (IOException | NoSuchAlgorithmException | SpeedBagException e) {
             fail(e);
         }
     }
@@ -441,8 +443,35 @@ public class SpeedBagItTest {
             // Make sure that the bag files are correct
             this.validateBagItFiles(zipFile, bagVersion, bag.getPayloadFileCount(), checksumAlgorithm);
             Files.delete(bagFilePath);
-        } catch (IOException | NoSuchAlgorithmException e) {
+        } catch (IOException | NoSuchAlgorithmException | SpeedBagException e) {
             fail(e);
         }
     }
+
+    /**
+     * Tests that when two files are added with the same name, SpeedBagException is thrown.
+     */
+    @Test
+    void testDuplicateAddFile() throws IOException, NoSuchAlgorithmException, SpeedBagException {
+        double bagVersion = 1.0;
+        String checksumAlgorithm = "MD5";
+        Map<String, String> bagMetadata = new HashMap<>();
+        SpeedBagIt bag = new SpeedBagIt(bagVersion, checksumAlgorithm, bagMetadata);
+
+        String dataFile1 = "1234, 9876, 3845";
+        String dataFile2 = "trees, cars, bridges";
+        InputStream dataFile1Stream = new ByteArrayInputStream(dataFile1.getBytes(StandardCharsets.UTF_8));
+        InputStream dataFile2Stream = new ByteArrayInputStream(dataFile2.getBytes(StandardCharsets.UTF_8));
+        // Check standard data files
+        bag.addFile(dataFile1Stream, "data/data_file1.csv", false);
+        assertThrows(SpeedBagException.class,  ()-> {
+            bag.addFile(dataFile2Stream, "data/data_file1.csv", false);
+        });
+        // Check tag files
+        bag.addFile(dataFile1Stream, "tag/data_file1.csv", true);
+        assertThrows(SpeedBagException.class,  ()-> {
+            bag.addFile(dataFile2Stream, "tag/data_file1.csv", true);
+        });
+    }
 }
+
