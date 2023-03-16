@@ -33,10 +33,8 @@ import java.security.NoSuchAlgorithmException;
 import java.text.SimpleDateFormat;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -74,9 +72,10 @@ public class SpeedBagIt {
     // Map of key-values that go in the bagit.txt file
     public Map<String, String> bagitMetadata;
 
-    // A list holding all of the files in the bag
-    private List<SpeedFile> dataFiles;
-    private List<SpeedFile> tagFiles;
+    // Containers for keeping track of tag & data files, keyed off of
+    // their relative file path
+    private HashMap<String, SpeedFile> dataFiles;
+    private HashMap<String, SpeedFile> tagFiles;
     
     // An ExecutorService to run the piped stream in another thread
     private static ExecutorService executor = null;
@@ -101,8 +100,8 @@ public class SpeedBagIt {
                     Map<String, String> bagitMetadata) throws IOException {
         this.version = version;
         this.checksumAlgorithm = checksumAlgorithm;
-        this.dataFiles = new ArrayList<>();
-        this.tagFiles = new ArrayList<>();
+        this.dataFiles = new HashMap<>();
+        this.tagFiles = new HashMap<>();
         this.bagitMetadata = bagitMetadata;
         this.dataManifestFile = new HashMap<> ();
         this.tagManifestFile = new HashMap<> ();
@@ -120,17 +119,7 @@ public class SpeedBagIt {
      */
     public SpeedBagIt(double version,
                       String checksumAlgorithm) throws IOException {
-        this.version = version;
-        this.checksumAlgorithm = checksumAlgorithm;
-        this.dataFiles = new ArrayList<>();
-        this.tagFiles = new ArrayList<>();
-        this.bagitMetadata = new HashMap<> ();
-        this.dataManifestFile = new HashMap<> ();
-        this.tagManifestFile = new HashMap<> ();
-
-        this.properties = new Properties();
-        this.properties.load(Objects.requireNonNull(this.getClass().
-                getClassLoader().getResourceAsStream("speed-bagit.properties")));
+        this(version, checksumAlgorithm, new HashMap<>());
     }
 
     /**
@@ -152,9 +141,9 @@ public class SpeedBagIt {
         }
         SpeedFile newFile = new SpeedFile(new SpeedStream(file, checksum), bagPath, isTagFile);
             if (isTagFile) {
-                this.tagFiles.add(newFile);
+                this.tagFiles.put(bagPath, newFile);
             } else {
-                this.dataFiles.add(newFile);
+                this.dataFiles.put(bagPath, newFile);
             }
         }
 
@@ -166,21 +155,11 @@ public class SpeedBagIt {
          */
         private boolean hasPathCollisions(String path, boolean isTagFile) {
             if (isTagFile) {
-                for (SpeedFile tagFile : this.tagFiles) {
-                    if (Objects.equals(tagFile.getPath(), path)) {
-                        return true;
-                    }
-                }
+                return this.tagFiles.containsKey(path);
             } else {
-                for (SpeedFile dataFile : this.dataFiles) {
-                    if (Objects.equals(dataFile.getPath(), path)) {
-                        return true;
-                    }
-                }
+                return this.dataFiles.containsKey(path);
             }
-            return false;
         }
-
 
 
     /**
@@ -317,9 +296,9 @@ public class SpeedBagIt {
                         String timeStamp = new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss").format(new Date());
                         logger.info(String.format("Streaming bag at %s", timeStamp));
                         int totalSize = 0;
-                        // Stream all of the files in the root 'data' directory
+                        // Stream all the files in the root 'data' directory
 
-                        for (SpeedFile streamingFile : dataFiles) {
+                        for (SpeedFile streamingFile : dataFiles.values()) {
                             try {
                                 streamFile(zos, streamingFile);
                                 String checksum = new String(streamingFile.getStream().getChecksum());
@@ -351,8 +330,8 @@ public class SpeedBagIt {
                         fileStream = new ByteArrayInputStream(dataManifest.getBytes(StandardCharsets.UTF_8));
                         addFile(fileStream, fileName, MessageDigest.getInstance(checksumAlgorithm), true);
 
-                        // Write all of the tag files
-                        for (SpeedFile streamingFile : tagFiles) {
+                        // Write all the tag files
+                        for (SpeedFile streamingFile : tagFiles.values()) {
                             try {
                                 streamFile(zos, streamingFile);
                                 String checksum = streamingFile.getStream().getChecksum();
@@ -394,11 +373,11 @@ public class SpeedBagIt {
         return this.dataFiles.size();
     }
     /**
-     * Returns all of the tag files that have been added to
+     * Returns all the tag files that have been added to
      * the bag.
-     * @return List of tag files
+     * @return HashMap of tag files
      */
-    public List<SpeedFile> getTagFiles() {
+    public HashMap<String, SpeedFile> getTagFiles() {
         return this.tagFiles;
     }
 
@@ -407,7 +386,7 @@ public class SpeedBagIt {
      * to the bag. These are the files that belong under data/
      * @return List of data files
      */
-    public List<SpeedFile> getDataFiles() {
+    public HashMap<String, SpeedFile> getDataFiles() {
         return this.dataFiles;
     }
 

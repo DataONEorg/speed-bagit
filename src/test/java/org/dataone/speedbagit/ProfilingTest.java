@@ -43,8 +43,8 @@ import java.util.zip.ZipOutputStream;
 
 /**
  * A suite of tests that should be run under a profiler and ignored by CI systems and ordinary builds.
- * These should be run before each release to ensure that emory management is
- * sane (ie entire files aren't loaded into memory at once).
+ * These should be run before each release to ensure that memory management is
+ * working properly (ie entire files aren't loaded into memory at once).
  */
 
 public class ProfilingTest {

@@ -49,10 +49,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.apache.commons.io.IOUtils;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
-
+import static org.junit.jupiter.api.Assertions.*;
 
 
 /**
@@ -340,15 +337,15 @@ public class SpeedBagItTest {
 
 
         SpeedBagIt bag = getStockBag();
-        List<SpeedFile> dataFiles = bag.getDataFiles();
+        HashMap<String, SpeedFile> dataFiles = bag.getDataFiles();
         assert dataFiles.size() == 2;
-        for (SpeedFile dataFile: dataFiles) {
+        for (SpeedFile dataFile: dataFiles.values()) {
             assert expectedDataPaths.contains(dataFile.getPath());
         }
 
-        List<SpeedFile> metadataFiles = bag.getTagFiles();
+        HashMap<String, SpeedFile> metadataFiles = bag.getTagFiles();
         assert metadataFiles.size() == 2;
-        for (SpeedFile tagFile: metadataFiles) {
+        for (SpeedFile tagFile: metadataFiles.values()) {
             assert expecteMetadataPaths.contains(tagFile.getPath());
         }
     }
@@ -356,14 +353,14 @@ public class SpeedBagItTest {
     @Test
     public void testGetDataFiles() throws SpeedBagException, NoSuchAlgorithmException, IOException {
         SpeedBagIt bag = getStockBag();
-        List<SpeedFile> dataFiles = bag.getDataFiles();
+        HashMap<String, SpeedFile> dataFiles = bag.getDataFiles();
         assert dataFiles.size() == 2;
     }
 
     @Test
     public void testGetTagFiles() throws SpeedBagException, NoSuchAlgorithmException, IOException {
         SpeedBagIt bag = getStockBag();
-        List<SpeedFile> metadataFiles = bag.getTagFiles();
+        HashMap<String, SpeedFile> metadataFiles = bag.getTagFiles();
         assert metadataFiles.size() == 2;
     }
 
