@@ -33,7 +33,7 @@ Then, add the SpeedBagIt dependency to the `pom.xml` file.
 <dependency>
     <groupId>org.dataone</groupId>
     <artifactId>speedbagit</artifactId>
-    <version>1.0</version>
+    <version>1.0.5</version>
 </dependency>
 ```
 
@@ -105,3 +105,4 @@ Additional support was provided for working group collaboration by the National 
 [![nceas_footer](https://www.nceas.ucsb.edu/sites/default/files/2020-03/NCEAS-full%20logo-4C.png)](http://www.nceas.ucsb.edu)
 
 [![dataone_footer](https://www.dataone.org/sites/all/images/DataONE_LOGO.jpg)](http://dataone.org)
+
