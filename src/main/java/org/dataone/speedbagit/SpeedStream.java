@@ -37,7 +37,7 @@ public class SpeedStream extends FilterInputStream {
     // The object that holds the checksum state & performs checksumming
     private MessageDigest digest;
     // The number of bytes streamed
-    private int size;
+    private long size;
     /**
      * Constructs a new SpeedStream object
      *
@@ -99,7 +99,7 @@ public class SpeedStream extends FilterInputStream {
      *
      * @return The number of bytes streamed
      */
-    public int getSize() {
+    public long getSize() {
         return size;
     }
 

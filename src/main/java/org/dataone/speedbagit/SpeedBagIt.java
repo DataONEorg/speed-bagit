@@ -219,7 +219,7 @@ public class SpeedBagIt {
      * @param bagSize: The size of the bag
      * @return A text string with the file contents
      */
-    public String generateBagInfoTxt(String payloadOxum, int bagSize) {
+    public String generateBagInfoTxt(String payloadOxum, long bagSize) {
         logger.debug("Generating bag-info.txt");
         LocalDateTime dateTime = LocalDateTime.now();
         DateTimeFormatter dateFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ENGLISH);
@@ -295,7 +295,7 @@ public class SpeedBagIt {
                     try {
                         String timeStamp = new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss").format(new Date());
                         logger.info(String.format("Streaming bag at %s", timeStamp));
-                        int totalSize = 0;
+                        long totalSize = 0;
                         // Stream all the files in the root 'data' directory
 
                         for (SpeedFile streamingFile : dataFiles.values()) {

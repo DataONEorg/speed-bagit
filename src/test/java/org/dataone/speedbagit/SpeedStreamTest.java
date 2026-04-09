@@ -48,7 +48,7 @@ public class SpeedStreamTest {
         SpeedStream speedStream = new SpeedStream(testDataStream, targetDigest);
 
         // Make sure that the size always starts at 0
-        assertEquals(speedStream.getSize(), 0);
+        assertEquals(speedStream.getSize(), 0L);
     }
 
     /**
@@ -74,7 +74,7 @@ public class SpeedStreamTest {
 
         assertEquals(expectedSHA1, speedStream.getChecksum());
         // Check that the SpeedStream size is correct
-        assertEquals(testData.length(), speedStream.getSize());
+        assertEquals((long) testData.length(), speedStream.getSize());
     }
 
     /**
@@ -100,7 +100,7 @@ public class SpeedStreamTest {
 
         assertEquals(expectedSHA1, speedStream.getChecksum());
         // Check that the SpeedStream size is correct
-        assertEquals(testData.length(), speedStream.getSize());
+        assertEquals((long) testData.length(), speedStream.getSize());
         // Check that the SpeedStream size matches the size of the result
         assertEquals(result.toString().length(), testData.length());
     }
