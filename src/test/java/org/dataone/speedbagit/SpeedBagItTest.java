@@ -24,6 +24,7 @@ package org.dataone.speedbagit;
 
 import java.io.ByteArrayInputStream;
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.StringReader;
@@ -468,6 +469,58 @@ public class SpeedBagItTest {
         bag.addFile(dataFile1Stream, "tag/data_file1.csv", true);
         assertThrows(SpeedBagException.class,  ()-> {
             bag.addFile(dataFile2Stream, "tag/data_file1.csv", true);
+        });
+    }
+
+    /**
+     * Tests that when streaming fails in the background thread, the caller
+     * receives an IOException rather than silently getting a truncated stream.
+     */
+    @Test
+    public void testStreamPropagatesError() throws IOException, NoSuchAlgorithmException, SpeedBagException {
+        SpeedBagIt bag = new SpeedBagIt(1.0, "MD5");
+
+        // Add a stream that throws on read, which will cause the background thread to fail
+        InputStream failingStream = new InputStream() {
+            @Override
+            public int read() throws IOException {
+                throw new IOException("simulated read failure");
+            }
+        };
+        bag.addFile(failingStream, "data/bad_file.csv", false);
+
+        InputStream bagStream = bag.stream();
+        assertThrows(IOException.class, () -> {
+            byte[] buf = new byte[1024];
+            while (bagStream.read(buf) != -1) {
+                // drain until error
+            }
+        });
+    }
+
+    /**
+     * Tests that when streaming fails in the background thread, the caller
+     * receives an IOException rather than silently getting a truncated stream. It uses copyLarge
+     * to test the method
+     */
+    @Test
+    public void testStreamPropagatesError2() throws IOException, NoSuchAlgorithmException,
+        SpeedBagException {
+        SpeedBagIt bag = new SpeedBagIt(1.0, "MD5");
+
+        // Add a stream that throws on read, which will cause the background thread to fail
+        InputStream failingStream = new InputStream() {
+            @Override
+            public int read() throws IOException {
+                throw new IOException("simulated read failure");
+            }
+        };
+        bag.addFile(failingStream, "data/bad_file.csv", false);
+
+        InputStream bagStream = bag.stream();
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream(100000000);
+        assertThrows(IOException.class, () -> {
+            IOUtils.copyLarge(bagStream, outputStream);
         });
     }
 }

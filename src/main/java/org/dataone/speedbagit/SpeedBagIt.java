@@ -23,6 +23,7 @@
 package org.dataone.speedbagit;
 
 import java.io.ByteArrayInputStream;
+import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PipedInputStream;
@@ -41,6 +42,7 @@ import java.util.Objects;
 import java.util.Properties;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -288,6 +290,7 @@ public class SpeedBagIt {
         PipedOutputStream ps = new PipedOutputStream();
         PipedInputStream is = new PipedInputStream(ps);
         ZipOutputStream zos = new ZipOutputStream(ps);
+        AtomicReference<Exception> failure = new AtomicReference<>();
 
         executor.execute(
             new Runnable() {
@@ -355,13 +358,39 @@ public class SpeedBagIt {
                         zos.close();
                         timeStamp = new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss").format(new Date());
                         logger.info(String.format("Finished streaming bag at %s", timeStamp));
-                        
+
                     } catch (Exception e) {
-                        e.printStackTrace();
+                        logger.error("Error streaming bag", e);
+                        failure.set(e);
+                    } finally {
+                        try { zos.close(); } catch (IOException ignored) {}
+                        try { ps.close(); } catch (IOException ignored) {}
                     }
                 }
             });
-        return is;
+
+        return new FilterInputStream(is) {
+            @Override
+            public int read() throws IOException {
+                int b = super.read();
+                if (b == -1) checkFailure();
+                return b;
+            }
+
+            @Override
+            public int read(byte[] buf, int off, int len) throws IOException {
+                int n = super.read(buf, off, len);
+                if (n == -1) checkFailure();
+                return n;
+            }
+
+            private void checkFailure() throws IOException {
+                Exception ex = failure.get();
+                if (ex != null) {
+                    throw new IOException("Bag streaming failed", ex);
+                }
+            }
+        };
     }
 
     /**
