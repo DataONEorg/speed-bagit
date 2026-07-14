@@ -81,7 +81,7 @@ try {
 ### Contributing
 
 The takeaway for contributing is that feature branches are created off of the `develop` branch and pull requests should be made 
-into the `develop` branch rather than `master`.
+into the `develop` branch rather than `main`.
 
 For example, the workflow to create a pull request for a feature that adds support for fetch.txt follows
 
