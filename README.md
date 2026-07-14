@@ -1,7 +1,8 @@
 # SpeedBagIt
-[![Build Status](https://travis-ci.com/DataONEorg/speed-bagit.svg?branch=main)](https://travis-ci.com/DataONEorg/speed-bagit)
+[![Java CI with Maven](https://github.com/DataONEorg/speed-bagit/actions/workflows/java-build-and-test.yaml/badge.svg)](https://github.com/DataONEorg/speed-bagit/actions/workflows/java-build-and-test.yaml)
 
 - **Authors**: Thomas Thelen ([NCEAS](http://www.nceas.ucsb.edu))
+- **Contributors**: [Jing Tao](https://github.com/taojing2002), [Matt Jones](https://github.com/mbjones), [Christopher Jones](https://github.com/csjx)
 - **License**: [Apache 2](http://opensource.org/licenses/Apache-2.0)
 - [**Submit Bugs and feature requests**](https://github.com/DataONEorg/speed-bagit/issues)
 
@@ -33,7 +34,7 @@ Then, add the SpeedBagIt dependency to the `pom.xml` file.
 <dependency>
     <groupId>org.dataone</groupId>
     <artifactId>speedbagit</artifactId>
-    <version>1.0.5</version>
+    <version>1.0.4</version>
 </dependency>
 ```
 
@@ -49,6 +50,12 @@ mvn install
 
 ### Quick Start
 
+Create a bag, add a file to it, and stream the resulting zip.
+```java
+SpeedBagIt bag = new SpeedBagIt(1.0, "MD-5");
+bag.addFile(new FileInputStream("ice_caps.csv"), "data/ice_caps.csv", false);
+InputStream bagStream = bag.stream();
+```
 
 #### Customizing bagit.txt
 
@@ -59,7 +66,7 @@ Creating the key-value pairs,
 Map<String, String> bagMetadata = new HashMap<>();
 bagMetadata.put("description", "This bag contains information about polar ice caps.");
 bagMetadata.put("Contact-Email", "admin@dataone.org");
-bagMetadata.put("External-Identifier", doi:xx.1234);
+bagMetadata.put("External-Identifier", "doi:xx.1234");
 ```
 
 Pass the key-value pairs to the SpeedBagIt constructor.
@@ -74,7 +81,7 @@ try {
 ### Contributing
 
 The takeaway for contributing is that feature branches are created off of the `develop` branch and pull requests should be made 
-into the `develop` branch rather than `master`. 
+into the `develop` branch rather than `master`.
 
 For example, the workflow to create a pull request for a feature that adds support for fetch.txt follows
 
@@ -86,7 +93,7 @@ For example, the workflow to create a pull request for a feature that adds suppo
 
 #### Code Style
 This project conforms to the [Google Java Style Guide](https://google.github.io/styleguide/javaguide.html) and new 
-contributions should follow suite.
+contributions should follow suit.
 
 #### Unit Tests
 Unit tests should be created for all new classes and if possible, public methods. When writing unit tests, keep in mind that 
@@ -102,7 +109,7 @@ Work on this package was supported by:
 
 Additional support was provided for working group collaboration by the National Center for Ecological Analysis and Synthesis, a Center funded by the University of California, Santa Barbara, and the State of California.
 
-[![nceas_footer](https://www.nceas.ucsb.edu/sites/default/files/2020-03/NCEAS-full%20logo-4C.png)](http://www.nceas.ucsb.edu)
+[![DataONE_footer](https://user-images.githubusercontent.com/6643222/162324180-b5cf0f5f-ae7a-4ca6-87c3-9733a2590634.png)](https://dataone.org)
 
-[![dataone_footer](https://www.dataone.org/sites/all/images/DataONE_LOGO.jpg)](http://dataone.org)
+[![nceas_footer](https://www.nceas.ucsb.edu/sites/default/files/2020-03/NCEAS-full%20logo-4C.png)](https://www.nceas.ucsb.edu)
 
