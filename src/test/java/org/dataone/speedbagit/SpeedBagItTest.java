@@ -51,6 +51,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.apache.commons.io.IOUtils;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -445,28 +446,22 @@ public class SpeedBagItTest {
     }
 
     /**
-     * Tests that when two files are added with the same name, SpeedBagException is thrown.
+     * Tests that when two data files or two tag files are added with the same path,
+     * SpeedBagException is thrown.
      */
-    @Test
-    void testDuplicateAddFile() throws IOException, NoSuchAlgorithmException, SpeedBagException {
-        double bagVersion = 1.0;
-        String checksumAlgorithm = "MD5";
-        Map<String, String> bagMetadata = new HashMap<>();
-        SpeedBagIt bag = new SpeedBagIt(bagVersion, checksumAlgorithm, bagMetadata);
+    @ParameterizedTest
+    @CsvSource({"false, data/data_file1.csv", "true, tag/data_file1.csv"})
+    void testDuplicateAddFile(boolean isTagFile, String path)
+            throws IOException, NoSuchAlgorithmException, SpeedBagException {
+        SpeedBagIt bag = new SpeedBagIt(1.0, "MD5");
 
         String dataFile1 = "1234, 9876, 3845";
         String dataFile2 = "trees, cars, bridges";
         InputStream dataFile1Stream = new ByteArrayInputStream(dataFile1.getBytes(StandardCharsets.UTF_8));
         InputStream dataFile2Stream = new ByteArrayInputStream(dataFile2.getBytes(StandardCharsets.UTF_8));
-        // Check standard data files
-        bag.addFile(dataFile1Stream, "data/data_file1.csv", false);
+        bag.addFile(dataFile1Stream, path, isTagFile);
         assertThrows(SpeedBagException.class,  ()-> {
-            bag.addFile(dataFile2Stream, "data/data_file1.csv", false);
-        });
-        // Check tag files
-        bag.addFile(dataFile1Stream, "tag/data_file1.csv", true);
-        assertThrows(SpeedBagException.class,  ()-> {
-            bag.addFile(dataFile2Stream, "tag/data_file1.csv", true);
+            bag.addFile(dataFile2Stream, path, isTagFile);
         });
     }
 

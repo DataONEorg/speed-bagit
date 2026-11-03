@@ -29,6 +29,8 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -76,12 +78,12 @@ public class SpeedFileTest {
     /**
      * Test isTagFile is returning the correct property
      */
-    @Test
-    public void testIsTagFile()
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    public void testIsTagFile(boolean tagFile)
     {
         String testCsvFile = "1234, 56789";
         String targetPath = "data/my_csv_file.csv";
-        boolean tagFile = false;
         InputStream fileStream = new ByteArrayInputStream(testCsvFile.getBytes(StandardCharsets.UTF_8));
         try {
             SpeedStream speedStream = new SpeedStream(fileStream, MessageDigest.getInstance("MD5"));
