@@ -41,6 +41,7 @@ import java.util.Locale;
 import java.util.Enumeration;
 import java.util.zip.ZipFile;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -49,6 +50,8 @@ import java.util.zip.ZipEntry;
 import org.junit.jupiter.api.io.TempDir;
 import org.apache.commons.io.IOUtils;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -185,40 +188,29 @@ public class SpeedBagItTest {
     }
 
     /**
-     * Test that the default bagit.txt file is correct
+     * Test that the default bagit.txt file contains only the version and encoding.
+     * The RFC has this constraint on 0.97 and 1.0, so test them both here.
      */
-    @Test
-    public void testGenerateBagIt() throws IOException {
-        // Don't specify any additional metadata for bagit.txt
-        double bagVersion = 1.0;
+    @ParameterizedTest
+    @ValueSource(doubles = {0.97, 1.0})
+    public void testGenerateBagIt(double bagVersion) throws IOException {
         SpeedBagIt bag = new SpeedBagIt(bagVersion, "MD5");
 
-        // Generate the text for the bagit.txt file
         String bagitTxtFile = bag.generateBagitTxt();
 
-        // The bare minimum content  to check against
-        Map<String, String> minimumMetadata = new HashMap<>();
-        minimumMetadata.put("version", String.valueOf(bagVersion));
-        minimumMetadata.put("Tag-File-Character-Encoding", "UTF-8");
-
-    	BufferedReader bufReader = new BufferedReader(new StringReader(bagitTxtFile));
-    	String line=null;
-    	while( (line=bufReader.readLine()) != null )
-    	{
-            String[] keyPair = line.split(": ");
-            String key = minimumMetadata.get(keyPair[0]);
-            String value = minimumMetadata.get(keyPair[1]);
-            assertEquals(minimumMetadata.get(key), value);
-    		
-    	}
+        assertTrue(bagitTxtFile.endsWith("\n"), bagitTxtFile);
+        String[] lines = bagitTxtFile.split("\n");
+        assertEquals(2, lines.length, bagitTxtFile);
+        assertEquals("BagIt-Version: " + bagVersion, lines[0]);
+        assertEquals("Tag-File-Character-Encoding: UTF-8", lines[1]);
     }
 
     /**
-     * Test that the bagit.txt file has additional parameters that were specified
-     * by the user.
+     * Test that the bagit.txt file contains each user-specified fields. The RFC has this constraint on 0.97 and 1.0, so test them both here.
      */
-    @Test
-    public void testGenerateBagitTxtCustom() throws IOException {
+    @ParameterizedTest
+    @ValueSource(doubles = {0.97, 1.0})
+    public void testGenerateBagitTxtCustom(double bagVersion) throws IOException {
 
         String bagDescription = "A test bag.";
         String externalDescription = "A bag used for testing.";
@@ -231,19 +223,25 @@ public class SpeedBagItTest {
         bagMetadata.put("Contact-Email", contactEmail);
         bagMetadata.put("External-Identifier", externalIdentifier);
 
-        SpeedBagIt bag = new SpeedBagIt(1.0, "MD5", bagMetadata);
+        SpeedBagIt bag = new SpeedBagIt(bagVersion, "MD5", bagMetadata);
 
-        // Generate the text for the bagit.txt file
         String bagitTxtFile = bag.generateBagitTxt();
-    	BufferedReader bufReader = new BufferedReader(new StringReader(bagitTxtFile));
-    	String line=null;
-    	while( (line=bufReader.readLine()) != null )
-        {
-            String[] keyPair = line.split(": ");
-            String key = bagMetadata.get(keyPair[0]);
-            String value = bagMetadata.get(keyPair[1]);
-            assertEquals(bagMetadata.get(key), value);
+
+        assertTrue(bagitTxtFile.endsWith("\n"), bagitTxtFile);
+        String[] lines = bagitTxtFile.split("\n");
+        int customFieldCount = bagMetadata.size();
+        assertEquals(customFieldCount + 2, lines.length, bagitTxtFile);
+        assertEquals("BagIt-Version: " + bagVersion, lines[customFieldCount]);
+        assertEquals("Tag-File-Character-Encoding: UTF-8", lines[customFieldCount + 1]);
+
+        // The custom fields are written in HashMap order, so they are compared as a map
+        Map<String, String> writtenMetadata = new HashMap<>();
+        for (String line : Arrays.copyOfRange(lines, 0, customFieldCount)) {
+            String[] keyValue = line.split(": ", 2);
+            assertEquals(2, keyValue.length, line);
+            writtenMetadata.put(keyValue[0], keyValue[1]);
         }
+        assertEquals(bagMetadata, writtenMetadata);
     }
 
     /**
