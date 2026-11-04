@@ -186,7 +186,7 @@ public class SpeedBagItTest {
         String metadataFile = "extra metadata";
         InputStream fetchFile1Stream = new ByteArrayInputStream(fetchFile.getBytes(StandardCharsets.UTF_8));
         InputStream metadataFile2Stream = new ByteArrayInputStream(metadataFile.getBytes(StandardCharsets.UTF_8));
-        bag.addFile(fetchFile1Stream, "./fetch.txt", true);
+        bag.addFile(fetchFile1Stream, "fetch.txt", true);
         bag.addFile(metadataFile2Stream, "metadata/metadata.csv", true);
 
         return bag;
@@ -336,9 +336,7 @@ public class SpeedBagItTest {
     }
 
     /**
-     * Tests a case where the bag only has files in the data directory.
-     *
-     * Test that streams are correctly added.
+     * Tests that addFile places data files in the data files and tag files in the tag files.
      */
     @Test
     public void testAddFile() throws SpeedBagException, NoSuchAlgorithmException, IOException {
@@ -349,37 +347,22 @@ public class SpeedBagItTest {
         expectedDataPaths.add("data/data_file1.csv");
         expectedDataPaths.add("data/data_file2.csv");
 
-        List<String> expecteMetadataPaths = new ArrayList<>();
-        expecteMetadataPaths.add("./fetch.txt");
-        expecteMetadataPaths.add("metadata/metadata.csv");
-
+        List<String> expectedMetadataPaths = new ArrayList<>();
+        expectedMetadataPaths.add("fetch.txt");
+        expectedMetadataPaths.add("metadata/metadata.csv");
 
         SpeedBagIt bag = getStockBag();
         HashMap<String, SpeedFile> dataFiles = bag.getDataFiles();
-        assert dataFiles.size() == 2;
+        assertEquals(expectedDataPaths.size(), dataFiles.size());
         for (SpeedFile dataFile: dataFiles.values()) {
-            assert expectedDataPaths.contains(dataFile.getPath());
+            assertTrue(expectedDataPaths.contains(dataFile.getPath()), dataFile.getPath());
         }
 
-        HashMap<String, SpeedFile> metadataFiles = bag.getTagFiles();
-        assert metadataFiles.size() == 2;
-        for (SpeedFile tagFile: metadataFiles.values()) {
-            assert expecteMetadataPaths.contains(tagFile.getPath());
+        HashMap<String, SpeedFile> tagFiles = bag.getTagFiles();
+        assertEquals(expectedMetadataPaths.size(), tagFiles.size());
+        for (SpeedFile tagFile: tagFiles.values()) {
+            assertTrue(expectedMetadataPaths.contains(tagFile.getPath()), tagFile.getPath());
         }
-    }
-
-    @Test
-    public void testGetDataFiles() throws SpeedBagException, NoSuchAlgorithmException, IOException {
-        SpeedBagIt bag = getStockBag();
-        HashMap<String, SpeedFile> dataFiles = bag.getDataFiles();
-        assert dataFiles.size() == 2;
-    }
-
-    @Test
-    public void testGetTagFiles() throws SpeedBagException, NoSuchAlgorithmException, IOException {
-        SpeedBagIt bag = getStockBag();
-        HashMap<String, SpeedFile> metadataFiles = bag.getTagFiles();
-        assert metadataFiles.size() == 2;
     }
 
     /**
