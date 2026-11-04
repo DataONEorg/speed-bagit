@@ -23,31 +23,30 @@
 package org.dataone.speedbagit;
 
 import java.io.ByteArrayInputStream;
-import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
-import java.io.StringReader;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.Locale;
+import java.time.LocalDate;
 import java.util.Enumeration;
 import java.util.zip.ZipFile;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 
 import org.junit.jupiter.api.io.TempDir;
+import org.apache.commons.codec.binary.Hex;
 import org.apache.commons.io.IOUtils;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -69,51 +68,6 @@ public class SpeedBagItTest {
     Path directory = Files.createTempDirectory("speedbag_tests");
 
     public SpeedBagItTest() throws IOException {
-    }
-
-    private void validateBagitFile(String contents, double bagVersion) throws IOException {
-    	BufferedReader bufReader = new BufferedReader(new StringReader(contents));
-    	String line=null;
-    	while( (line=bufReader.readLine()) != null )
-    	{
-            String[] keyPair = line.split(": ");
-            if (keyPair[0].equals("BagIt-Version")) {
-                assertEquals(keyPair[1], String.valueOf(bagVersion));
-            } else if (keyPair[0].equals("Tag-File-Character-Encoding")) {
-                assertEquals(keyPair[1], "UTF-8");
-            }
-    	}
-    }
-
-    /**
-     * Validates the contents of the bag-info.txt file
-     *
-     * @param contents:   The contents of the file
-     * @param zipFile: The version of the bag
-     * @param dataFileCount: The number of files in the data/ directory
-     * @throws IOException 
-     */
-    private void validateBagInfoFile(String contents, ZipFile zipFile, int dataFileCount) throws IOException {
-    	BufferedReader bufReader = new BufferedReader(new StringReader(contents));
-    	String line=null;
-    	while( (line=bufReader.readLine()) != null )
-    	{
-            String[] keyPair = line.split(": ");
-            switch (keyPair[0]) {
-                case "Payload-Oxum":
-                    // Split the oxum into its two parts
-                    String[] payloadOxum = keyPair[1].split("\\.");
-                    // Check that the second digit is the number of data files streamed
-                    assertEquals(payloadOxum[1], String.valueOf(dataFileCount));
-                    break;
-                case "Bagging-Date":
-                    // Check that it was recently bagged
-                    LocalDateTime dateTime = LocalDateTime.now();
-                    DateTimeFormatter dateFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ENGLISH);
-                    assertEquals(keyPair[1], dateFormat.format(dateTime));
-                    break;
-            }
-    	}
     }
 
     /**
@@ -198,11 +152,7 @@ public class SpeedBagItTest {
 
         String bagitTxtFile = bag.generateBagitTxt();
 
-        assertTrue(bagitTxtFile.endsWith("\n"), bagitTxtFile);
-        String[] lines = bagitTxtFile.split("\n");
-        assertEquals(2, lines.length, bagitTxtFile);
-        assertEquals("BagIt-Version: " + bagVersion, lines[0]);
-        assertEquals("Tag-File-Character-Encoding: UTF-8", lines[1]);
+        validateBagitFile(bagitTxtFile.getBytes(StandardCharsets.UTF_8), bagVersion);
     }
 
     /**
@@ -227,16 +177,15 @@ public class SpeedBagItTest {
 
         String bagitTxtFile = bag.generateBagitTxt();
 
-        assertTrue(bagitTxtFile.endsWith("\n"), bagitTxtFile);
-        String[] lines = bagitTxtFile.split("\n");
+        List<String> lines = tagFileLines(bagitTxtFile.getBytes(StandardCharsets.UTF_8));
         int customFieldCount = bagMetadata.size();
-        assertEquals(customFieldCount + 2, lines.length, bagitTxtFile);
-        assertEquals("BagIt-Version: " + bagVersion, lines[customFieldCount]);
-        assertEquals("Tag-File-Character-Encoding: UTF-8", lines[customFieldCount + 1]);
+        assertEquals(customFieldCount + 2, lines.size(), bagitTxtFile);
+        assertEquals("BagIt-Version: " + bagVersion, lines.get(customFieldCount));
+        assertEquals("Tag-File-Character-Encoding: UTF-8", lines.get(customFieldCount + 1));
 
         // The custom fields are written in HashMap order, so they are compared as a map
         Map<String, String> writtenMetadata = new HashMap<>();
-        for (String line : Arrays.copyOfRange(lines, 0, customFieldCount)) {
+        for (String line : lines.subList(0, customFieldCount)) {
             String[] keyValue = line.split(": ", 2);
             assertEquals(2, keyValue.length, line);
             writtenMetadata.put(keyValue[0], keyValue[1]);
@@ -245,41 +194,146 @@ public class SpeedBagItTest {
     }
 
     /**
-     * Iterates over a bag, looking for bagit files that can be validated.
+     * Test helper that reads every entry of a zip file and returns a map of the entries -> bytes.
      *
-     * @param zipFile:    The bag being validated
-     * @param bagVersion: The version of the bag
-     * @param dataFileCount: The number of files in the data/ directory
-     * @param manifestAlgorithmName: The checksum algorithm name in the manifest file names, e.g. sha256
+     * @param zipFile The zip file to read
+     * @return The bytes of each entry, keyed by entry name
      */
-    private void validateBagItFiles(ZipFile zipFile, double bagVersion, int dataFileCount,
-                                    String manifestAlgorithmName) throws IOException {
-        // Process each of the bag metadata files and validate them. Also make sure that the
-        // manifest files are named properly
-        boolean foundManifest = false;
-        boolean foundTagManifest = false;
-        String manifestName = "manifest-" + manifestAlgorithmName + ".txt";
-        String tagManifestName = "tagmanifest-" + manifestAlgorithmName + ".txt";
-        Enumeration<? extends ZipEntry> entries = zipFile.entries();
-        while (entries.hasMoreElements()) {
-            ZipEntry entry = entries.nextElement();
-            String contents;
-            try (InputStream fileStream = zipFile.getInputStream(entry)) {
-                contents = IOUtils.toString(fileStream, StandardCharsets.UTF_8);
-            }
-            String entryName = entry.getName();
-            if (entryName.equals("bag-info.txt")) {
-                this.validateBagInfoFile(contents, zipFile, dataFileCount);
-            } else if(entryName.equals("bagit.txt")) {
-                this.validateBagitFile(contents, bagVersion);
-            } else if (entryName.equals(manifestName)) {
-                foundManifest = true;
-            } else if (entryName.equals(tagManifestName)) {
-                foundTagManifest = true;
+    private Map<String, byte[]> readEntries(ZipFile zipFile) throws IOException {
+        Map<String, byte[]> entries = new HashMap<>();
+        Enumeration<? extends ZipEntry> zipEntries = zipFile.entries();
+        while (zipEntries.hasMoreElements()) {
+            ZipEntry entry = zipEntries.nextElement();
+            try (InputStream entryStream = zipFile.getInputStream(entry)) {
+                byte[] previous = entries.put(entry.getName(), IOUtils.toByteArray(entryStream));
+                assertNull(previous, "The bag has two entries named " + entry.getName());
             }
         }
-        assertTrue(foundManifest);
-        assertTrue(foundTagManifest);
+        return entries;
+    }
+
+    /**
+     * Test helper that splits a tag file into lines
+     * and asserts that the last line ends with a line break.
+     *
+     * @param contents The bytes of the tag file
+     * @return The lines of the tag file, without their line breaks
+     */
+    private List<String> tagFileLines(byte[] contents) {
+        String text = new String(contents, StandardCharsets.UTF_8);
+        if (text.isEmpty()) {
+            return new ArrayList<>();
+        }
+        assertTrue(text.endsWith("\n") || text.endsWith("\r"), "The last line has no line break: " + text);
+        // BagIt allows for LF, CR and CRLF line break sytles
+        return Arrays.asList(text.split("\\r\\n|\\n|\\r"));
+    }
+
+    /**
+     * Validates that bagit.txt contains only the version line and the encoding line.
+     *
+     * @param contents The bytes of bagit.txt
+     * @param bagVersion The version of the bag
+     */
+    private void validateBagitFile(byte[] contents, double bagVersion) {
+        List<String> lines = tagFileLines(contents);
+        assertEquals(2, lines.size(), lines.toString());
+        assertEquals("BagIt-Version: " + bagVersion, lines.get(0));
+        assertEquals("Tag-File-Character-Encoding: UTF-8", lines.get(1));
+    }
+
+    /**
+     * Validates that bag-info.txt contains the bagging date, payload oxum and bag size.
+     *
+     * @param contents The bytes of bag-info.txt
+     * @param dataFiles The contents of each data file added to the bag, keyed by path
+     * @param startDate The date before the bag was streamed
+     */
+    private void validateBagInfoFile(byte[] contents, Map<String, String> dataFiles, LocalDate startDate) {
+        Map<String, String> fields = new HashMap<>();
+        for (String line : tagFileLines(contents)) {
+            String[] keyValue = line.split(": ", 2);
+            assertEquals(2, keyValue.length, line);
+            assertNull(fields.put(keyValue[0], keyValue[1]), "bag-info.txt has two " + keyValue[0] + " fields");
+        }
+        assertEquals(new HashSet<>(Arrays.asList("Bagging-Date", "Payload-Oxum", "Bag-Size")), fields.keySet());
+
+        long payloadBytes = 0;
+        for (String dataFile : dataFiles.values()) {
+            payloadBytes += dataFile.getBytes(StandardCharsets.UTF_8).length;
+        }
+        assertEquals(payloadBytes + "." + dataFiles.size(), fields.get("Payload-Oxum"));
+
+        // The bag is dated when it is streamed. This is an issue if the test runs over midnight because they days
+        // will be different. Set the date here...
+        LocalDate baggingDate = LocalDate.parse(fields.get("Bagging-Date"));
+        assertTrue(baggingDate.equals(startDate) || baggingDate.equals(startDate.plusDays(1)),
+                "Bagging-Date " + baggingDate + " is not " + startDate + " or the day after");
+    }
+
+    /**
+     * Validates that a manifest lists each expected path once, with the checksum of that path's bag entry.
+     *
+     * @param entries The bytes of each bag entry, keyed by entry name
+     * @param manifestName The name of the manifest entry
+     * @param expectedPaths The paths the manifest lists
+     * @param checksumAlgorithm The MessageDigest algorithm of the manifest checksums
+     */
+    private void validateManifest(Map<String, byte[]> entries, String manifestName, Set<String> expectedPaths,
+                                  String checksumAlgorithm) throws NoSuchAlgorithmException {
+        Map<String, String> checksums = new HashMap<>();
+        for (String line : tagFileLines(entries.get(manifestName))) {
+            String[] checksumPath = line.split("\\s+", 2);
+            assertEquals(2, checksumPath.length, line);
+            assertNull(checksums.put(checksumPath[1], checksumPath[0]),
+                    manifestName + " lists " + checksumPath[1] + " twice");
+        }
+        assertEquals(expectedPaths, checksums.keySet(), manifestName);
+
+        for (Map.Entry<String, String> listed : checksums.entrySet()) {
+            byte[] digest = MessageDigest.getInstance(checksumAlgorithm).digest(entries.get(listed.getKey()));
+            assertEquals(Hex.encodeHexString(digest), listed.getValue(), manifestName + ": " + listed.getKey());
+        }
+    }
+
+    /**
+     * Validates a streamed bag against the data files and tag files that were added to it.
+     *
+     * @param zipFile The bag being validated
+     * @param bagVersion The version of the bag
+     * @param checksumAlgorithm The MessageDigest algorithm the bag was created with
+     * @param manifestAlgorithmName The checksum algorithm name in the manifest file names, e.g. sha256
+     * @param dataFiles The contents of each data file added to the bag, keyed by path
+     * @param tagFiles The contents of each tag file added to the bag, keyed by path
+     * @param startDate The date before the bag was streamed
+     */
+    private void validateBag(ZipFile zipFile, double bagVersion, String checksumAlgorithm,
+                             String manifestAlgorithmName, Map<String, String> dataFiles,
+                             Map<String, String> tagFiles, LocalDate startDate)
+            throws IOException, NoSuchAlgorithmException {
+        Map<String, byte[]> entries = readEntries(zipFile);
+        String manifestName = "manifest-" + manifestAlgorithmName + ".txt";
+        String tagManifestName = "tagmanifest-" + manifestAlgorithmName + ".txt";
+
+        // The tag manifest lists every tag file except itself
+        Set<String> tagManifestPaths = new HashSet<>(tagFiles.keySet());
+        tagManifestPaths.addAll(Arrays.asList("bagit.txt", "bag-info.txt", manifestName));
+        Set<String> expectedEntries = new HashSet<>(dataFiles.keySet());
+        expectedEntries.addAll(tagManifestPaths);
+        expectedEntries.add(tagManifestName);
+        assertEquals(expectedEntries, entries.keySet());
+
+        Map<String, String> addedFiles = new HashMap<>(dataFiles);
+        addedFiles.putAll(tagFiles);
+        for (Map.Entry<String, String> addedFile : addedFiles.entrySet()) {
+            assertEquals(addedFile.getValue(), new String(entries.get(addedFile.getKey()), StandardCharsets.UTF_8),
+                    addedFile.getKey());
+        }
+
+        validateBagitFile(entries.get("bagit.txt"), bagVersion);
+        validateBagInfoFile(entries.get("bag-info.txt"), dataFiles, startDate);
+        validateManifest(entries, manifestName, dataFiles.keySet(), checksumAlgorithm);
+        validateManifest(entries, tagManifestName, tagManifestPaths, checksumAlgorithm);
     }
 
     /**
@@ -323,12 +377,14 @@ public class SpeedBagItTest {
             throws IOException, NoSuchAlgorithmException {
         SpeedBagIt bag = new SpeedBagIt(bagVersion, checksumAlgorithm);
 
+        LocalDate startDate = LocalDate.now();
         Path bagFilePath = directory.resolve("emptyBag.zip");
         try (FileOutputStream fos = new FileOutputStream(bagFilePath.toFile())) {
             IOUtils.copy(bag.stream(), fos);
         }
         try (ZipFile zipFile = new ZipFile(bagFilePath.toFile())) {
-            validateBagItFiles(zipFile, bagVersion, bag.getPayloadFileCount(), manifestAlgorithmName);
+            validateBag(zipFile, bagVersion, checksumAlgorithm, manifestAlgorithmName,
+                    new HashMap<>(), new HashMap<>(), startDate);
         }
     }
 
@@ -375,18 +431,27 @@ public class SpeedBagItTest {
         // Tag files are placed outside data/, which is reserved for the payload
         String directoryName = isTagFile ? "metadata" : "data";
         String[] fileContents = {"1234, 9876, 3845", "1234, 9876, 38", "1234, 9876"};
+        Map<String, String> dataFiles = new HashMap<>();
+        Map<String, String> tagFiles = new HashMap<>();
         for (int i = 0; i < fileContents.length; i++) {
+            String path = String.format("%s/file%d.csv", directoryName, i + 1);
             InputStream fileStream = new ByteArrayInputStream(fileContents[i].getBytes(StandardCharsets.UTF_8));
-            bag.addFile(fileStream, String.format("%s/file%d.csv", directoryName, i + 1),
-                    MessageDigest.getInstance(checksumAlgorithm), isTagFile);
+            bag.addFile(fileStream, path, MessageDigest.getInstance(checksumAlgorithm), isTagFile);
+            if (isTagFile) {
+                tagFiles.put(path, fileContents[i]);
+            } else {
+                dataFiles.put(path, fileContents[i]);
+            }
         }
 
+        LocalDate startDate = LocalDate.now();
         Path bagFilePath = directory.resolve("bag.zip");
         try (FileOutputStream fos = new FileOutputStream(bagFilePath.toFile())) {
             IOUtils.copy(bag.stream(), fos);
         }
         try (ZipFile zipFile = new ZipFile(bagFilePath.toFile())) {
-            validateBagItFiles(zipFile, bagVersion, bag.getPayloadFileCount(), manifestAlgorithmName);
+            validateBag(zipFile, bagVersion, checksumAlgorithm, manifestAlgorithmName,
+                    dataFiles, tagFiles, startDate);
         }
     }
 
