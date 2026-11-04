@@ -32,7 +32,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
@@ -45,13 +44,16 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 
 import org.junit.jupiter.api.io.TempDir;
 import org.apache.commons.io.IOUtils;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -251,17 +253,16 @@ public class SpeedBagItTest {
      * @param zipFile:    The bag being validated
      * @param bagVersion: The version of the bag
      * @param dataFileCount: The number of files in the data/ directory
-     * @param checksum: The checksum used to bag the data
+     * @param manifestAlgorithmName: The checksum algorithm name in the manifest file names, e.g. sha256
      */
-    private void validateBagItFiles(ZipFile zipFile, double bagVersion, int dataFileCount, String checksum)
-            throws IOException {
+    private void validateBagItFiles(ZipFile zipFile, double bagVersion, int dataFileCount,
+                                    String manifestAlgorithmName) throws IOException {
         // Process each of the bag metadata files and validate them. Also make sure that the
         // manifest files are named properly
         boolean foundManifest = false;
         boolean foundTagManifest = false;
-        // Create the filenames for the checksum files
-        String manifestName = "manifest-"+checksum.toLowerCase()+".txt";
-        String tagManifestName = "tagmanifest-"+checksum.toLowerCase()+".txt";
+        String manifestName = "manifest-" + manifestAlgorithmName + ".txt";
+        String tagManifestName = "tagmanifest-" + manifestAlgorithmName + ".txt";
         Enumeration<? extends ZipEntry> entries = zipFile.entries();
         while (entries.hasMoreElements()) {
             ZipEntry entry = entries.nextElement();
@@ -283,38 +284,53 @@ public class SpeedBagItTest {
     }
 
     /**
-     * Tests that a bag can be created without a payload
-     * Test that the bag properly exports
+     * Test helper that returns each checksum algorithm with its name in the manifest file names,
+     * for each BagIt version.
+     *
+     * @return The checksum algorithm, manifest algorithm name and BagIt version of each case
      */
-    @Test
-    public void testEmptyBag() throws IOException {
-        double bagVersion = 1.0;
-        String checksumAlgorithm = "MD5";
-        Map<String, String> bagMetadata = new HashMap<>();
-
-        SpeedBagIt bag = null;
-        Path bagFilePath = null;
-        try {
-            // Create and write the bag
-            bag = new SpeedBagIt(bagVersion, checksumAlgorithm, bagMetadata);
-            Path bagPath = Paths.get(directory.toString() + "emptyBag.zip");
-            bagFilePath = Files.createFile(bagPath);
-            FileOutputStream fos = new FileOutputStream(bagFilePath.toString());
-            InputStream bagStream = bag.stream();
-            IOUtils.copy(bagStream, fos);
-        } catch (IOException | NoSuchAlgorithmException e) {
-            e.printStackTrace();
-            if (bagFilePath != null) {
-                Files.delete(bagFilePath);
+    static Stream<Arguments> bagParameters() {
+        String[][] algorithms = {{"MD5", "md5"}, {"SHA-1", "sha1"}, {"SHA-256", "sha256"}, {"SHA-512", "sha512"}};
+        double[] versions = {0.97, 1.0};
+        List<Arguments> cases = new ArrayList<>();
+        for (String[] algorithm : algorithms) {
+            for (double version : versions) {
+                cases.add(Arguments.of(algorithm[0], algorithm[1], version));
             }
-            fail();
         }
+        return cases.stream();
+    }
 
-        // Open to bag to read
-        ZipFile zipFile = new ZipFile(bagFilePath.toString());
-        this.validateBagItFiles(zipFile, bagVersion, bag.getPayloadFileCount(), checksumAlgorithm);
-        Files.delete(bagFilePath);
+    /**
+     * Test helper that returns each case from bagParameters once with data files and once with tag files.
+     *
+     * @return The checksum algorithm, manifest algorithm name, BagIt version and tag file flag of each case
+     */
+    static Stream<Arguments> bagExportParameters() {
+        return bagParameters().flatMap(bag -> {
+            Object[] values = bag.get();
+            return Stream.of(
+                    Arguments.of(values[0], values[1], values[2], false),
+                    Arguments.of(values[0], values[1], values[2], true));
+        });
+    }
 
+    /**
+     * Tests that a bag without a payload is streamed with its bagit.txt, bag-info.txt and manifest files.
+     */
+    @ParameterizedTest
+    @MethodSource("bagParameters")
+    public void testEmptyBag(String checksumAlgorithm, String manifestAlgorithmName, double bagVersion)
+            throws IOException, NoSuchAlgorithmException {
+        SpeedBagIt bag = new SpeedBagIt(bagVersion, checksumAlgorithm);
+
+        Path bagFilePath = directory.resolve("emptyBag.zip");
+        try (FileOutputStream fos = new FileOutputStream(bagFilePath.toFile())) {
+            IOUtils.copy(bag.stream(), fos);
+        }
+        try (ZipFile zipFile = new ZipFile(bagFilePath.toFile())) {
+            validateBagItFiles(zipFile, bagVersion, bag.getPayloadFileCount(), manifestAlgorithmName);
+        }
     }
 
     /**
@@ -364,84 +380,31 @@ public class SpeedBagItTest {
         assert metadataFiles.size() == 2;
     }
 
-    @Test
-    public void testDataBagExport() {
-        double bagVersion = 1.0;
-        String checksumAlgorithm = "MD5";
-        Map<String, String> bagMetadata = new HashMap<>();
+    /**
+     * Tests that a bag with three data files or three tag files is streamed with its bagit.txt,
+     * bag-info.txt and manifest files.
+     */
+    @ParameterizedTest
+    @MethodSource("bagExportParameters")
+    public void testBagExport(String checksumAlgorithm, String manifestAlgorithmName, double bagVersion,
+                              boolean isTagFile) throws IOException, NoSuchAlgorithmException, SpeedBagException {
+        SpeedBagIt bag = new SpeedBagIt(bagVersion, checksumAlgorithm);
 
-        SpeedBagIt bag ;
-        Path bagFilePath;
-        try {
-            bag = new SpeedBagIt(bagVersion, checksumAlgorithm, bagMetadata);
-
-            String dataFile1 = "1234, 9876, 3845";
-            String dataFile2 = "1234, 9876, 38";
-            String dataFile3 = "1234, 9876";
-
-            // Simulate getting a stream to those bytes and adding them to the bag
-            InputStream dataFileStream1 = new ByteArrayInputStream(dataFile1.getBytes(StandardCharsets.UTF_8));
-            InputStream dataFileStream2 = new ByteArrayInputStream(dataFile2.getBytes(StandardCharsets.UTF_8));
-            InputStream dataFileStream3 = new ByteArrayInputStream(dataFile3.getBytes(StandardCharsets.UTF_8));
-            bag.addFile(dataFileStream1, "data/data_file1.csv", MessageDigest.getInstance("MD5"), false);
-            bag.addFile(dataFileStream2, "data/data_file2.csv", MessageDigest.getInstance("MD5"), false);
-            bag.addFile(dataFileStream3, "data/data_file3.csv", MessageDigest.getInstance("MD5"), false);
-
-            Path bagPath = Paths.get(directory.toString() + "dataBag.zip");
-            bagFilePath = Files.createFile(bagPath);
-            FileOutputStream fos = new FileOutputStream(bagFilePath.toString());
-            InputStream bagStream = bag.stream();
-            IOUtils.copy(bagStream, fos);
-
-            // Open to bag to read
-            ZipFile zipFile = new ZipFile(bagFilePath.toString());
-            // Make sure that the bag files are correct
-            this.validateBagItFiles(zipFile, bagVersion, bag.getPayloadFileCount(), checksumAlgorithm);
-            Files.delete(bagFilePath);
-
-        } catch (IOException | NoSuchAlgorithmException | SpeedBagException e) {
-            fail(e);
+        // Tag files are placed outside data/, which is reserved for the payload
+        String directoryName = isTagFile ? "metadata" : "data";
+        String[] fileContents = {"1234, 9876, 3845", "1234, 9876, 38", "1234, 9876"};
+        for (int i = 0; i < fileContents.length; i++) {
+            InputStream fileStream = new ByteArrayInputStream(fileContents[i].getBytes(StandardCharsets.UTF_8));
+            bag.addFile(fileStream, String.format("%s/file%d.csv", directoryName, i + 1),
+                    MessageDigest.getInstance(checksumAlgorithm), isTagFile);
         }
-    }
 
-    @Test
-    public void testMetadataBagExport() {
-        double bagVersion = 1.0;
-        String checksumAlgorithm = "MD5";
-        Map<String, String> bagMetadata = new HashMap<>();
-
-        SpeedBagIt bag;
-        Path bagFilePath;
-        try {
-            bag = new SpeedBagIt(bagVersion, checksumAlgorithm, bagMetadata);
-
-            String metadataFile1 = "col1: frog_counts";
-            String metadataFile2 = "col2: fish_counts";
-            String metadataFile3 = "col3: moss_counts";
-
-            // Simulate getting a stream to those bytes and adding them to the bag
-            InputStream dataFileStream1 = new ByteArrayInputStream(metadataFile1.getBytes(StandardCharsets.UTF_8));
-            InputStream dataFileStream2 = new ByteArrayInputStream(metadataFile2.getBytes(StandardCharsets.UTF_8));
-            InputStream dataFileStream3 = new ByteArrayInputStream(metadataFile3.getBytes(StandardCharsets.UTF_8));
-            bag.addFile(dataFileStream1, "metadata/metadataFile1.csv",
-                    MessageDigest.getInstance(checksumAlgorithm), true);
-            bag.addFile(dataFileStream2, "metadata/metadataFile2.csv",
-                    MessageDigest.getInstance(checksumAlgorithm), true);
-            bag.addFile(dataFileStream3, "metadata/metadataFile3.csv",
-                    MessageDigest.getInstance(checksumAlgorithm), true);
-
-            Path bagPath = Paths.get(directory.toString() + "metadataBag.zip");
-            bagFilePath = Files.createFile(bagPath);
-            FileOutputStream fos = new FileOutputStream(bagFilePath.toString());
-            InputStream bagStream = bag.stream();
-            IOUtils.copy(bagStream, fos);
-            // Open to bag to read
-            ZipFile zipFile = new ZipFile(bagFilePath.toString());
-            // Make sure that the bag files are correct
-            this.validateBagItFiles(zipFile, bagVersion, bag.getPayloadFileCount(), checksumAlgorithm);
-            Files.delete(bagFilePath);
-        } catch (IOException | NoSuchAlgorithmException | SpeedBagException e) {
-            fail(e);
+        Path bagFilePath = directory.resolve("bag.zip");
+        try (FileOutputStream fos = new FileOutputStream(bagFilePath.toFile())) {
+            IOUtils.copy(bag.stream(), fos);
+        }
+        try (ZipFile zipFile = new ZipFile(bagFilePath.toFile())) {
+            validateBagItFiles(zipFile, bagVersion, bag.getPayloadFileCount(), manifestAlgorithmName);
         }
     }
 
