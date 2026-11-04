@@ -116,11 +116,6 @@ public class SpeedBagItTest {
     	}
     }
 
-    static String convertStreamToString(java.io.InputStream is) {
-        java.util.Scanner s = new java.util.Scanner(is).useDelimiter("\\A");
-        return s.hasNext() ? s.next() : "";
-    }
-
     /**
      * Returns the bagit.txt metadata to construct a bag with and the metadata the bag is expected to have.
      *
@@ -268,8 +263,10 @@ public class SpeedBagItTest {
         Enumeration<? extends ZipEntry> entries = zipFile.entries();
         while (entries.hasMoreElements()) {
             ZipEntry entry = entries.nextElement();
-            InputStream fileStream = zipFile.getInputStream(entry);
-            String contents = convertStreamToString(fileStream);
+            String contents;
+            try (InputStream fileStream = zipFile.getInputStream(entry)) {
+                contents = IOUtils.toString(fileStream, StandardCharsets.UTF_8);
+            }
             String entryName = entry.getName();
             if (entryName.equals("bag-info.txt")) {
                 this.validateBagInfoFile(contents, zipFile, dataFileCount);
