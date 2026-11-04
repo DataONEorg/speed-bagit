@@ -56,7 +56,7 @@ public class SpeedStreamTest {
         SpeedStream speedStream = new SpeedStream(testDataStream, targetDigest);
 
         // Make sure that the size always starts at 0
-        assertEquals(speedStream.getSize(), 0);
+        assertEquals(0, speedStream.getSize());
     }
 
     /**

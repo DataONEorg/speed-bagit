@@ -28,7 +28,6 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -65,10 +64,7 @@ import static org.junit.jupiter.api.Assertions.*;
 public class SpeedBagItTest {
 
     @TempDir
-    Path directory = Files.createTempDirectory("speedbag_tests");
-
-    public SpeedBagItTest() throws IOException {
-    }
+    Path directory;
 
     /**
      * Returns the bagit.txt metadata to construct a bag with and the metadata the bag is expected to have.
@@ -108,10 +104,9 @@ public class SpeedBagItTest {
     }
 
     /**
-     * Test that the constructor is properly preserving input and
-     * inserting the correct properties into the bag metadata file.
-     * Helper method that creates a stock Bag
-     * @return The SpeedBag object
+     * Creates a BagIt 1.0, MD5 bag with two data files and two tag files.
+     *
+     * @return The bag
      */
     public SpeedBagIt getStockBag() throws NoSuchAlgorithmException, IOException, SpeedBagException {
         double bagVersion = 1.0;
