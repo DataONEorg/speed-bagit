@@ -122,19 +122,40 @@ public class SpeedBagItTest {
     }
 
     /**
-     * Test that the constructor is properly preserving input and
-     * inserting the correct properties into the bag metadata file.
+     * Returns the bagit.txt metadata to construct a bag with and the metadata the bag is expected to have.
+     *
+     * @return The constructor metadata and expected metadata of each case
      */
-    @Test
-    public void testCtorMetadata() throws IOException {
+    static Stream<Arguments> constructorParameters() {
+        Map<String, String> customMetadata = new HashMap<>();
+        customMetadata.put("External-Description", "A bag used for testing.");
+        customMetadata.put("External-Identifier", "1234");
+        return Stream.of(
+                Arguments.of(null, new HashMap<String, String>()),
+                Arguments.of(new HashMap<String, String>(), new HashMap<String, String>()),
+                Arguments.of(customMetadata, new HashMap<>(customMetadata)));
+    }
+
+    /**
+     * Tests that the constructors set the version, checksum algorithm and bagit.txt metadata.
+     */
+    @ParameterizedTest
+    @MethodSource("constructorParameters")
+    public void testCtor(Map<String, String> bagMetadata, Map<String, String> expectedMetadata)
+            throws IOException {
         double bagVersion = 1.0;
         String checksumAlgorithm = "MD5";
 
         SpeedBagIt bag;
-        bag = new SpeedBagIt(bagVersion, checksumAlgorithm);
-        assertEquals(bag.version, bagVersion);
-        assertEquals(bag.checksumAlgorithm, checksumAlgorithm);
-        assertEquals(bag.bagitMetadata.size(), 0);
+        if (bagMetadata == null) {
+            bag = new SpeedBagIt(bagVersion, checksumAlgorithm);
+        } else {
+            bag = new SpeedBagIt(bagVersion, checksumAlgorithm, bagMetadata);
+        }
+
+        assertEquals(bagVersion, bag.version);
+        assertEquals(checksumAlgorithm, bag.checksumAlgorithm);
+        assertEquals(expectedMetadata, bag.bagitMetadata);
     }
 
     /**
@@ -169,25 +190,6 @@ public class SpeedBagItTest {
         bag.addFile(metadataFile2Stream, "metadata/metadata.csv", true);
 
         return bag;
-    }
-
-    /**
-     * Test that the constructor is setting the right parameters.
-     */
-    @Test
-    public void testCtor() throws IOException {
-        double bagVersion = 1.0;
-        String checksumAlgorithm = "MD5";
-        // Custom bag metadata
-        Map<String, String> bagMetadata = new HashMap<>();
-        bagMetadata.put("External-Description", "A bag used for testing.");
-        bagMetadata.put("External-Identifier", "1234");
-
-        SpeedBagIt bag;
-        bag = new SpeedBagIt(bagVersion, checksumAlgorithm, bagMetadata);
-        assertEquals(bag.version, bagVersion);
-        assertEquals(bag.checksumAlgorithm, checksumAlgorithm);
-        assertEquals(bag.bagitMetadata.size(), bagMetadata.size());
     }
 
     /**
