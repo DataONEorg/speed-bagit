@@ -47,7 +47,11 @@ node_modules
 .sass-cache
 /target/
 
-# IntelliJ Project folder
+# IntelliJ project files
 .idea/*
+*.iml
+
+# Eclipse project files
 .project
+.classpath
 .settings/*
