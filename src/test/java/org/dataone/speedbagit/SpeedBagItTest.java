@@ -48,6 +48,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.apache.commons.codec.binary.Hex;
 import org.apache.commons.io.IOUtils;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -368,6 +369,8 @@ public class SpeedBagItTest {
      */
     @ParameterizedTest
     @MethodSource("bagParameters")
+    // SEPARATE_THREAD fails the test even when a read blocks and ignores the interrupt
+    @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     public void testEmptyBag(String checksumAlgorithm, String manifestAlgorithmName, double bagVersion)
             throws IOException, NoSuchAlgorithmException {
         SpeedBagIt bag = new SpeedBagIt(bagVersion, checksumAlgorithm);
@@ -419,6 +422,8 @@ public class SpeedBagItTest {
      */
     @ParameterizedTest
     @MethodSource("bagExportParameters")
+    // SEPARATE_THREAD fails the test even when a read blocks and ignores the interrupt
+    @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     public void testBagExport(String checksumAlgorithm, String manifestAlgorithmName, double bagVersion,
                               boolean isTagFile) throws IOException, NoSuchAlgorithmException, SpeedBagException {
         SpeedBagIt bag = new SpeedBagIt(bagVersion, checksumAlgorithm);
@@ -475,6 +480,8 @@ public class SpeedBagItTest {
      * receives an IOException rather than silently getting a truncated stream.
      */
     @Test
+    // SEPARATE_THREAD fails the test even when a read blocks and ignores the interrupt
+    @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     public void testStreamPropagatesError() throws IOException, NoSuchAlgorithmException, SpeedBagException {
         SpeedBagIt bag = new SpeedBagIt(1.0, "MD5");
 
@@ -502,6 +509,8 @@ public class SpeedBagItTest {
      * to test the method
      */
     @Test
+    // SEPARATE_THREAD fails the test even when a read blocks and ignores the interrupt
+    @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     public void testStreamPropagatesError2() throws IOException, NoSuchAlgorithmException,
         SpeedBagException {
         SpeedBagIt bag = new SpeedBagIt(1.0, "MD5");
