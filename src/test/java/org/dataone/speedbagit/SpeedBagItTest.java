@@ -23,32 +23,37 @@
 package org.dataone.speedbagit;
 
 import java.io.ByteArrayInputStream;
-import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
-import java.io.StringReader;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.Locale;
+import java.time.LocalDate;
 import java.util.Enumeration;
 import java.util.zip.ZipFile;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 
 import org.junit.jupiter.api.io.TempDir;
+import org.apache.commons.codec.binary.Hex;
 import org.apache.commons.io.IOUtils;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -60,82 +65,49 @@ import static org.junit.jupiter.api.Assertions.*;
 public class SpeedBagItTest {
 
     @TempDir
-    Path directory = Files.createTempDirectory("speedbag_tests");
-
-    public SpeedBagItTest() throws IOException {
-    }
-
-    private void validateBagitFile(String contents, double bagVersion) throws IOException {
-    	BufferedReader bufReader = new BufferedReader(new StringReader(contents));
-    	String line=null;
-    	while( (line=bufReader.readLine()) != null )
-    	{
-            String[] keyPair = line.split(": ");
-            if (keyPair[0].equals("BagIt-Version")) {
-                assertEquals(keyPair[1], String.valueOf(bagVersion));
-            } else if (keyPair[0].equals("Tag-File-Character-Encoding")) {
-                assertEquals(keyPair[1], "UTF-8");
-            }
-    	}
-    }
+    Path directory;
 
     /**
-     * Validates the contents of the bag-info.txt file
+     * Returns the bagit.txt metadata to construct a bag with and the metadata the bag is expected to have.
      *
-     * @param contents:   The contents of the file
-     * @param zipFile: The version of the bag
-     * @param dataFileCount: The number of files in the data/ directory
-     * @throws IOException 
+     * @return The constructor metadata and expected metadata of each case
      */
-    private void validateBagInfoFile(String contents, ZipFile zipFile, int dataFileCount) throws IOException {
-    	BufferedReader bufReader = new BufferedReader(new StringReader(contents));
-    	String line=null;
-    	while( (line=bufReader.readLine()) != null )
-    	{
-            String[] keyPair = line.split(": ");
-            switch (keyPair[0]) {
-                case "Payload-Oxum":
-                    // Split the oxum into its two parts
-                    String[] payloadOxum = keyPair[1].split("\\.");
-                    // Check that the second digit is the number of data files streamed
-                    assertEquals(payloadOxum[1], String.valueOf(dataFileCount));
-                    break;
-                case "Bagging-Date":
-                    // Check that it was recently bagged
-                    LocalDateTime dateTime = LocalDateTime.now();
-                    DateTimeFormatter dateFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ENGLISH);
-                    assertEquals(keyPair[1], dateFormat.format(dateTime));
-                    break;
-            }
-    	}
-    }
-
-    static String convertStreamToString(java.io.InputStream is) {
-        java.util.Scanner s = new java.util.Scanner(is).useDelimiter("\\A");
-        return s.hasNext() ? s.next() : "";
+    static Stream<Arguments> constructorParameters() {
+        Map<String, String> customMetadata = new HashMap<>();
+        customMetadata.put("External-Description", "A bag used for testing.");
+        customMetadata.put("External-Identifier", "1234");
+        return Stream.of(
+                Arguments.of(null, new HashMap<String, String>()),
+                Arguments.of(new HashMap<String, String>(), new HashMap<String, String>()),
+                Arguments.of(customMetadata, new HashMap<>(customMetadata)));
     }
 
     /**
-     * Test that the constructor is properly preserving input and
-     * inserting the correct properties into the bag metadata file.
+     * Tests that the constructors set the version, checksum algorithm and bagit.txt metadata.
      */
-    @Test
-    public void testCtorMetadata() throws IOException {
+    @ParameterizedTest
+    @MethodSource("constructorParameters")
+    public void testCtor(Map<String, String> bagMetadata, Map<String, String> expectedMetadata)
+            throws IOException {
         double bagVersion = 1.0;
         String checksumAlgorithm = "MD5";
 
         SpeedBagIt bag;
-        bag = new SpeedBagIt(bagVersion, checksumAlgorithm);
-        assertEquals(bag.version, bagVersion);
-        assertEquals(bag.checksumAlgorithm, checksumAlgorithm);
-        assertEquals(bag.bagitMetadata.size(), 0);
+        if (bagMetadata == null) {
+            bag = new SpeedBagIt(bagVersion, checksumAlgorithm);
+        } else {
+            bag = new SpeedBagIt(bagVersion, checksumAlgorithm, bagMetadata);
+        }
+
+        assertEquals(bagVersion, bag.version);
+        assertEquals(checksumAlgorithm, bag.checksumAlgorithm);
+        assertEquals(expectedMetadata, bag.bagitMetadata);
     }
 
     /**
-     * Test that the constructor is properly preserving input and
-     * inserting the correct properties into the bag metadata file.
-     * Helper method that creates a stock Bag
-     * @return The SpeedBag object
+     * Creates a BagIt 1.0, MD5 bag with two data files and two tag files.
+     *
+     * @return The bag
      */
     public SpeedBagIt getStockBag() throws NoSuchAlgorithmException, IOException, SpeedBagException {
         double bagVersion = 1.0;
@@ -159,66 +131,32 @@ public class SpeedBagItTest {
         String metadataFile = "extra metadata";
         InputStream fetchFile1Stream = new ByteArrayInputStream(fetchFile.getBytes(StandardCharsets.UTF_8));
         InputStream metadataFile2Stream = new ByteArrayInputStream(metadataFile.getBytes(StandardCharsets.UTF_8));
-        bag.addFile(fetchFile1Stream, "./fetch.txt", true);
+        bag.addFile(fetchFile1Stream, "fetch.txt", true);
         bag.addFile(metadataFile2Stream, "metadata/metadata.csv", true);
 
         return bag;
     }
 
     /**
-     * Test that the constructor is setting the right parameters.
+     * Test that the default bagit.txt file contains only the version and encoding.
+     * The RFC has this constraint on 0.97 and 1.0, so test them both here.
      */
-    @Test
-    public void testCtor() throws IOException {
-        double bagVersion = 1.0;
-        String checksumAlgorithm = "MD5";
-        // Custom bag metadata
-        Map<String, String> bagMetadata = new HashMap<>();
-        bagMetadata.put("External-Description", "A bag used for testing.");
-        bagMetadata.put("External-Identifier", "1234");
-
-        SpeedBagIt bag;
-        bag = new SpeedBagIt(bagVersion, checksumAlgorithm, bagMetadata);
-        assertEquals(bag.version, bagVersion);
-        assertEquals(bag.checksumAlgorithm, checksumAlgorithm);
-        assertEquals(bag.bagitMetadata.size(), bagMetadata.size());
-    }
-
-    /**
-     * Test that the default bagit.txt file is correct
-     */
-    @Test
-    public void testGenerateBagIt() throws IOException {
-        // Don't specify any additional metadata for bagit.txt
-        double bagVersion = 1.0;
+    @ParameterizedTest
+    @ValueSource(doubles = {0.97, 1.0})
+    public void testGenerateBagIt(double bagVersion) throws IOException {
         SpeedBagIt bag = new SpeedBagIt(bagVersion, "MD5");
 
-        // Generate the text for the bagit.txt file
         String bagitTxtFile = bag.generateBagitTxt();
 
-        // The bare minimum content  to check against
-        Map<String, String> minimumMetadata = new HashMap<>();
-        minimumMetadata.put("version", String.valueOf(bagVersion));
-        minimumMetadata.put("Tag-File-Character-Encoding", "UTF-8");
-
-    	BufferedReader bufReader = new BufferedReader(new StringReader(bagitTxtFile));
-    	String line=null;
-    	while( (line=bufReader.readLine()) != null )
-    	{
-            String[] keyPair = line.split(": ");
-            String key = minimumMetadata.get(keyPair[0]);
-            String value = minimumMetadata.get(keyPair[1]);
-            assertEquals(minimumMetadata.get(key), value);
-    		
-    	}
+        validateBagitFile(bagitTxtFile.getBytes(StandardCharsets.UTF_8), bagVersion);
     }
 
     /**
-     * Test that the bagit.txt file has additional parameters that were specified
-     * by the user.
+     * Test that the bagit.txt file contains each user-specified fields. The RFC has this constraint on 0.97 and 1.0, so test them both here.
      */
-    @Test
-    public void testGenerateBagitTxtCustom() throws IOException {
+    @ParameterizedTest
+    @ValueSource(doubles = {0.97, 1.0})
+    public void testGenerateBagitTxtCustom(double bagVersion) throws IOException {
 
         String bagDescription = "A test bag.";
         String externalDescription = "A bag used for testing.";
@@ -231,97 +169,225 @@ public class SpeedBagItTest {
         bagMetadata.put("Contact-Email", contactEmail);
         bagMetadata.put("External-Identifier", externalIdentifier);
 
-        SpeedBagIt bag = new SpeedBagIt(1.0, "MD5", bagMetadata);
+        SpeedBagIt bag = new SpeedBagIt(bagVersion, "MD5", bagMetadata);
 
-        // Generate the text for the bagit.txt file
         String bagitTxtFile = bag.generateBagitTxt();
-    	BufferedReader bufReader = new BufferedReader(new StringReader(bagitTxtFile));
-    	String line=null;
-    	while( (line=bufReader.readLine()) != null )
-        {
-            String[] keyPair = line.split(": ");
-            String key = bagMetadata.get(keyPair[0]);
-            String value = bagMetadata.get(keyPair[1]);
-            assertEquals(bagMetadata.get(key), value);
+
+        List<String> lines = tagFileLines(bagitTxtFile.getBytes(StandardCharsets.UTF_8));
+        int customFieldCount = bagMetadata.size();
+        assertEquals(customFieldCount + 2, lines.size(), bagitTxtFile);
+        assertEquals("BagIt-Version: " + bagVersion, lines.get(customFieldCount));
+        assertEquals("Tag-File-Character-Encoding: UTF-8", lines.get(customFieldCount + 1));
+
+        // The custom fields are written in HashMap order, so they are compared as a map
+        Map<String, String> writtenMetadata = new HashMap<>();
+        for (String line : lines.subList(0, customFieldCount)) {
+            String[] keyValue = line.split(": ", 2);
+            assertEquals(2, keyValue.length, line);
+            writtenMetadata.put(keyValue[0], keyValue[1]);
         }
+        assertEquals(bagMetadata, writtenMetadata);
     }
 
     /**
-     * Iterates over a bag, looking for bagit files that can be validated.
+     * Test helper that reads every entry of a zip file and returns a map of the entries -> bytes.
      *
-     * @param zipFile:    The bag being validated
-     * @param bagVersion: The version of the bag
-     * @param dataFileCount: The number of files in the data/ directory
-     * @param checksum: The checksum used to bag the data
+     * @param zipFile The zip file to read
+     * @return The bytes of each entry, keyed by entry name
      */
-    private void validateBagItFiles(ZipFile zipFile, double bagVersion, int dataFileCount, String checksum)
-            throws IOException {
-        // Process each of the bag metadata files and validate them. Also make sure that the
-        // manifest files are named properly
-        boolean foundManifest = false;
-        boolean foundTagManifest = false;
-        // Create the filenames for the checksum files
-        String manifestName = "manifest-"+checksum.toLowerCase()+".txt";
-        String tagManifestName = "tagmanifest-"+checksum.toLowerCase()+".txt";
-        Enumeration<? extends ZipEntry> entries = zipFile.entries();
-        while (entries.hasMoreElements()) {
-            ZipEntry entry = entries.nextElement();
-            InputStream fileStream = zipFile.getInputStream(entry);
-            String contents = convertStreamToString(fileStream);
-            String entryName = entry.getName();
-            if (entryName.equals("bag-info.txt")) {
-                this.validateBagInfoFile(contents, zipFile, dataFileCount);
-            } else if(entryName.equals("bagit.txt")) {
-                this.validateBagitFile(contents, bagVersion);
-            } else if (entryName.equals(manifestName)) {
-                foundManifest = true;
-            } else if (entryName.equals(tagManifestName)) {
-                foundTagManifest = true;
+    private Map<String, byte[]> readEntries(ZipFile zipFile) throws IOException {
+        Map<String, byte[]> entries = new HashMap<>();
+        Enumeration<? extends ZipEntry> zipEntries = zipFile.entries();
+        while (zipEntries.hasMoreElements()) {
+            ZipEntry entry = zipEntries.nextElement();
+            try (InputStream entryStream = zipFile.getInputStream(entry)) {
+                byte[] previous = entries.put(entry.getName(), IOUtils.toByteArray(entryStream));
+                assertNull(previous, "The bag has two entries named " + entry.getName());
             }
         }
-        assertTrue(foundManifest);
-        assertTrue(foundTagManifest);
+        return entries;
     }
 
     /**
-     * Tests that a bag can be created without a payload
-     * Test that the bag properly exports
+     * Test helper that splits a tag file into lines
+     * and asserts that the last line ends with a line break.
+     *
+     * @param contents The bytes of the tag file
+     * @return The lines of the tag file, without their line breaks
      */
-    @Test
-    public void testEmptyBag() throws IOException {
-        double bagVersion = 1.0;
-        String checksumAlgorithm = "MD5";
-        Map<String, String> bagMetadata = new HashMap<>();
+    private List<String> tagFileLines(byte[] contents) {
+        String text = new String(contents, StandardCharsets.UTF_8);
+        if (text.isEmpty()) {
+            return new ArrayList<>();
+        }
+        assertTrue(text.endsWith("\n") || text.endsWith("\r"), "The last line has no line break: " + text);
+        // BagIt allows for LF, CR and CRLF line break sytles
+        return Arrays.asList(text.split("\\r\\n|\\n|\\r"));
+    }
 
-        SpeedBagIt bag = null;
-        Path bagFilePath = null;
-        try {
-            // Create and write the bag
-            bag = new SpeedBagIt(bagVersion, checksumAlgorithm, bagMetadata);
-            Path bagPath = Paths.get(directory.toString() + "emptyBag.zip");
-            bagFilePath = Files.createFile(bagPath);
-            FileOutputStream fos = new FileOutputStream(bagFilePath.toString());
-            InputStream bagStream = bag.stream();
-            IOUtils.copy(bagStream, fos);
-        } catch (IOException | NoSuchAlgorithmException e) {
-            e.printStackTrace();
-            if (bagFilePath != null) {
-                Files.delete(bagFilePath);
-            }
-            fail();
+    /**
+     * Validates that bagit.txt contains only the version line and the encoding line.
+     *
+     * @param contents The bytes of bagit.txt
+     * @param bagVersion The version of the bag
+     */
+    private void validateBagitFile(byte[] contents, double bagVersion) {
+        List<String> lines = tagFileLines(contents);
+        assertEquals(2, lines.size(), lines.toString());
+        assertEquals("BagIt-Version: " + bagVersion, lines.get(0));
+        assertEquals("Tag-File-Character-Encoding: UTF-8", lines.get(1));
+    }
+
+    /**
+     * Validates that bag-info.txt contains the bagging date, payload oxum and bag size.
+     *
+     * @param contents The bytes of bag-info.txt
+     * @param dataFiles The contents of each data file added to the bag, keyed by path
+     * @param startDate The date before the bag was streamed
+     */
+    private void validateBagInfoFile(byte[] contents, Map<String, String> dataFiles, LocalDate startDate) {
+        Map<String, String> fields = new HashMap<>();
+        for (String line : tagFileLines(contents)) {
+            String[] keyValue = line.split(": ", 2);
+            assertEquals(2, keyValue.length, line);
+            assertNull(fields.put(keyValue[0], keyValue[1]), "bag-info.txt has two " + keyValue[0] + " fields");
+        }
+        assertEquals(new HashSet<>(Arrays.asList("Bagging-Date", "Payload-Oxum", "Bag-Size")), fields.keySet());
+
+        long payloadBytes = 0;
+        for (String dataFile : dataFiles.values()) {
+            payloadBytes += dataFile.getBytes(StandardCharsets.UTF_8).length;
+        }
+        assertEquals(payloadBytes + "." + dataFiles.size(), fields.get("Payload-Oxum"));
+
+        // The bag is dated when it is streamed. This is an issue if the test runs over midnight because they days
+        // will be different. Set the date here...
+        LocalDate baggingDate = LocalDate.parse(fields.get("Bagging-Date"));
+        assertTrue(baggingDate.equals(startDate) || baggingDate.equals(startDate.plusDays(1)),
+                "Bagging-Date " + baggingDate + " is not " + startDate + " or the day after");
+    }
+
+    /**
+     * Validates that a manifest lists each expected path once, with the checksum of that path's bag entry.
+     *
+     * @param entries The bytes of each bag entry, keyed by entry name
+     * @param manifestName The name of the manifest entry
+     * @param expectedPaths The paths the manifest lists
+     * @param checksumAlgorithm The MessageDigest algorithm of the manifest checksums
+     */
+    private void validateManifest(Map<String, byte[]> entries, String manifestName, Set<String> expectedPaths,
+                                  String checksumAlgorithm) throws NoSuchAlgorithmException {
+        Map<String, String> checksums = new HashMap<>();
+        for (String line : tagFileLines(entries.get(manifestName))) {
+            String[] checksumPath = line.split("\\s+", 2);
+            assertEquals(2, checksumPath.length, line);
+            assertNull(checksums.put(checksumPath[1], checksumPath[0]),
+                    manifestName + " lists " + checksumPath[1] + " twice");
+        }
+        assertEquals(expectedPaths, checksums.keySet(), manifestName);
+
+        for (Map.Entry<String, String> listed : checksums.entrySet()) {
+            byte[] digest = MessageDigest.getInstance(checksumAlgorithm).digest(entries.get(listed.getKey()));
+            assertEquals(Hex.encodeHexString(digest), listed.getValue(), manifestName + ": " + listed.getKey());
+        }
+    }
+
+    /**
+     * Validates a streamed bag against the data files and tag files that were added to it.
+     *
+     * @param zipFile The bag being validated
+     * @param bagVersion The version of the bag
+     * @param checksumAlgorithm The MessageDigest algorithm the bag was created with
+     * @param manifestAlgorithmName The checksum algorithm name in the manifest file names, e.g. sha256
+     * @param dataFiles The contents of each data file added to the bag, keyed by path
+     * @param tagFiles The contents of each tag file added to the bag, keyed by path
+     * @param startDate The date before the bag was streamed
+     */
+    private void validateBag(ZipFile zipFile, double bagVersion, String checksumAlgorithm,
+                             String manifestAlgorithmName, Map<String, String> dataFiles,
+                             Map<String, String> tagFiles, LocalDate startDate)
+            throws IOException, NoSuchAlgorithmException {
+        Map<String, byte[]> entries = readEntries(zipFile);
+        String manifestName = "manifest-" + manifestAlgorithmName + ".txt";
+        String tagManifestName = "tagmanifest-" + manifestAlgorithmName + ".txt";
+
+        // The tag manifest lists every tag file except itself
+        Set<String> tagManifestPaths = new HashSet<>(tagFiles.keySet());
+        tagManifestPaths.addAll(Arrays.asList("bagit.txt", "bag-info.txt", manifestName));
+        Set<String> expectedEntries = new HashSet<>(dataFiles.keySet());
+        expectedEntries.addAll(tagManifestPaths);
+        expectedEntries.add(tagManifestName);
+        assertEquals(expectedEntries, entries.keySet());
+
+        Map<String, String> addedFiles = new HashMap<>(dataFiles);
+        addedFiles.putAll(tagFiles);
+        for (Map.Entry<String, String> addedFile : addedFiles.entrySet()) {
+            assertEquals(addedFile.getValue(), new String(entries.get(addedFile.getKey()), StandardCharsets.UTF_8),
+                    addedFile.getKey());
         }
 
-        // Open to bag to read
-        ZipFile zipFile = new ZipFile(bagFilePath.toString());
-        this.validateBagItFiles(zipFile, bagVersion, bag.getPayloadFileCount(), checksumAlgorithm);
-        Files.delete(bagFilePath);
-
+        validateBagitFile(entries.get("bagit.txt"), bagVersion);
+        validateBagInfoFile(entries.get("bag-info.txt"), dataFiles, startDate);
+        validateManifest(entries, manifestName, dataFiles.keySet(), checksumAlgorithm);
+        validateManifest(entries, tagManifestName, tagManifestPaths, checksumAlgorithm);
     }
 
     /**
-     * Tests a case where the bag only has files in the data directory.
+     * Test helper that returns each checksum algorithm with its name in the manifest file names,
+     * for each BagIt version.
      *
-     * Test that streams are correctly added.
+     * @return The checksum algorithm, manifest algorithm name and BagIt version of each case
+     */
+    static Stream<Arguments> bagParameters() {
+        String[][] algorithms = {{"MD5", "md5"}, {"SHA-1", "sha1"}, {"SHA-256", "sha256"}, {"SHA-512", "sha512"}};
+        double[] versions = {0.97, 1.0};
+        List<Arguments> cases = new ArrayList<>();
+        for (String[] algorithm : algorithms) {
+            for (double version : versions) {
+                cases.add(Arguments.of(algorithm[0], algorithm[1], version));
+            }
+        }
+        return cases.stream();
+    }
+
+    /**
+     * Test helper that returns each case from bagParameters once with data files and once with tag files.
+     *
+     * @return The checksum algorithm, manifest algorithm name, BagIt version and tag file flag of each case
+     */
+    static Stream<Arguments> bagExportParameters() {
+        return bagParameters().flatMap(bag -> {
+            Object[] values = bag.get();
+            return Stream.of(
+                    Arguments.of(values[0], values[1], values[2], false),
+                    Arguments.of(values[0], values[1], values[2], true));
+        });
+    }
+
+    /**
+     * Tests that a bag without a payload is streamed with its bagit.txt, bag-info.txt and manifest files.
+     */
+    @ParameterizedTest
+    @MethodSource("bagParameters")
+    // SEPARATE_THREAD fails the test even when a read blocks and ignores the interrupt
+    @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    public void testEmptyBag(String checksumAlgorithm, String manifestAlgorithmName, double bagVersion)
+            throws IOException, NoSuchAlgorithmException {
+        SpeedBagIt bag = new SpeedBagIt(bagVersion, checksumAlgorithm);
+
+        LocalDate startDate = LocalDate.now();
+        Path bagFilePath = directory.resolve("emptyBag.zip");
+        try (FileOutputStream fos = new FileOutputStream(bagFilePath.toFile())) {
+            IOUtils.copy(bag.stream(), fos);
+        }
+        try (ZipFile zipFile = new ZipFile(bagFilePath.toFile())) {
+            validateBag(zipFile, bagVersion, checksumAlgorithm, manifestAlgorithmName,
+                    new HashMap<>(), new HashMap<>(), startDate);
+        }
+    }
+
+    /**
+     * Tests that addFile places data files in the data files and tag files in the tag files.
      */
     @Test
     public void testAddFile() throws SpeedBagException, NoSuchAlgorithmException, IOException {
@@ -332,143 +398,80 @@ public class SpeedBagItTest {
         expectedDataPaths.add("data/data_file1.csv");
         expectedDataPaths.add("data/data_file2.csv");
 
-        List<String> expecteMetadataPaths = new ArrayList<>();
-        expecteMetadataPaths.add("./fetch.txt");
-        expecteMetadataPaths.add("metadata/metadata.csv");
-
+        List<String> expectedMetadataPaths = new ArrayList<>();
+        expectedMetadataPaths.add("fetch.txt");
+        expectedMetadataPaths.add("metadata/metadata.csv");
 
         SpeedBagIt bag = getStockBag();
         HashMap<String, SpeedFile> dataFiles = bag.getDataFiles();
-        assert dataFiles.size() == 2;
+        assertEquals(expectedDataPaths.size(), dataFiles.size());
         for (SpeedFile dataFile: dataFiles.values()) {
-            assert expectedDataPaths.contains(dataFile.getPath());
+            assertTrue(expectedDataPaths.contains(dataFile.getPath()), dataFile.getPath());
         }
 
-        HashMap<String, SpeedFile> metadataFiles = bag.getTagFiles();
-        assert metadataFiles.size() == 2;
-        for (SpeedFile tagFile: metadataFiles.values()) {
-            assert expecteMetadataPaths.contains(tagFile.getPath());
-        }
-    }
-
-    @Test
-    public void testGetDataFiles() throws SpeedBagException, NoSuchAlgorithmException, IOException {
-        SpeedBagIt bag = getStockBag();
-        HashMap<String, SpeedFile> dataFiles = bag.getDataFiles();
-        assert dataFiles.size() == 2;
-    }
-
-    @Test
-    public void testGetTagFiles() throws SpeedBagException, NoSuchAlgorithmException, IOException {
-        SpeedBagIt bag = getStockBag();
-        HashMap<String, SpeedFile> metadataFiles = bag.getTagFiles();
-        assert metadataFiles.size() == 2;
-    }
-
-    @Test
-    public void testDataBagExport() {
-        double bagVersion = 1.0;
-        String checksumAlgorithm = "MD5";
-        Map<String, String> bagMetadata = new HashMap<>();
-
-        SpeedBagIt bag ;
-        Path bagFilePath;
-        try {
-            bag = new SpeedBagIt(bagVersion, checksumAlgorithm, bagMetadata);
-
-            String dataFile1 = "1234, 9876, 3845";
-            String dataFile2 = "1234, 9876, 38";
-            String dataFile3 = "1234, 9876";
-
-            // Simulate getting a stream to those bytes and adding them to the bag
-            InputStream dataFileStream1 = new ByteArrayInputStream(dataFile1.getBytes(StandardCharsets.UTF_8));
-            InputStream dataFileStream2 = new ByteArrayInputStream(dataFile2.getBytes(StandardCharsets.UTF_8));
-            InputStream dataFileStream3 = new ByteArrayInputStream(dataFile3.getBytes(StandardCharsets.UTF_8));
-            bag.addFile(dataFileStream1, "data/data_file1.csv", MessageDigest.getInstance("MD5"), false);
-            bag.addFile(dataFileStream2, "data/data_file2.csv", MessageDigest.getInstance("MD5"), false);
-            bag.addFile(dataFileStream3, "data/data_file3.csv", MessageDigest.getInstance("MD5"), false);
-
-            Path bagPath = Paths.get(directory.toString() + "dataBag.zip");
-            bagFilePath = Files.createFile(bagPath);
-            FileOutputStream fos = new FileOutputStream(bagFilePath.toString());
-            InputStream bagStream = bag.stream();
-            IOUtils.copy(bagStream, fos);
-
-            // Open to bag to read
-            ZipFile zipFile = new ZipFile(bagFilePath.toString());
-            // Make sure that the bag files are correct
-            this.validateBagItFiles(zipFile, bagVersion, bag.getPayloadFileCount(), checksumAlgorithm);
-            Files.delete(bagFilePath);
-
-        } catch (IOException | NoSuchAlgorithmException | SpeedBagException e) {
-            fail(e);
-        }
-    }
-
-    @Test
-    public void testMetadataBagExport() {
-        double bagVersion = 1.0;
-        String checksumAlgorithm = "MD5";
-        Map<String, String> bagMetadata = new HashMap<>();
-
-        SpeedBagIt bag;
-        Path bagFilePath;
-        try {
-            bag = new SpeedBagIt(bagVersion, checksumAlgorithm, bagMetadata);
-
-            String metadataFile1 = "col1: frog_counts";
-            String metadataFile2 = "col2: fish_counts";
-            String metadataFile3 = "col3: moss_counts";
-
-            // Simulate getting a stream to those bytes and adding them to the bag
-            InputStream dataFileStream1 = new ByteArrayInputStream(metadataFile1.getBytes(StandardCharsets.UTF_8));
-            InputStream dataFileStream2 = new ByteArrayInputStream(metadataFile2.getBytes(StandardCharsets.UTF_8));
-            InputStream dataFileStream3 = new ByteArrayInputStream(metadataFile3.getBytes(StandardCharsets.UTF_8));
-            bag.addFile(dataFileStream1, "metadata/metadataFile1.csv",
-                    MessageDigest.getInstance(checksumAlgorithm), true);
-            bag.addFile(dataFileStream2, "metadata/metadataFile2.csv",
-                    MessageDigest.getInstance(checksumAlgorithm), true);
-            bag.addFile(dataFileStream3, "metadata/metadataFile3.csv",
-                    MessageDigest.getInstance(checksumAlgorithm), true);
-
-            Path bagPath = Paths.get(directory.toString() + "metadataBag.zip");
-            bagFilePath = Files.createFile(bagPath);
-            FileOutputStream fos = new FileOutputStream(bagFilePath.toString());
-            InputStream bagStream = bag.stream();
-            IOUtils.copy(bagStream, fos);
-            // Open to bag to read
-            ZipFile zipFile = new ZipFile(bagFilePath.toString());
-            // Make sure that the bag files are correct
-            this.validateBagItFiles(zipFile, bagVersion, bag.getPayloadFileCount(), checksumAlgorithm);
-            Files.delete(bagFilePath);
-        } catch (IOException | NoSuchAlgorithmException | SpeedBagException e) {
-            fail(e);
+        HashMap<String, SpeedFile> tagFiles = bag.getTagFiles();
+        assertEquals(expectedMetadataPaths.size(), tagFiles.size());
+        for (SpeedFile tagFile: tagFiles.values()) {
+            assertTrue(expectedMetadataPaths.contains(tagFile.getPath()), tagFile.getPath());
         }
     }
 
     /**
-     * Tests that when two files are added with the same name, SpeedBagException is thrown.
+     * Tests that a bag with three data files or three tag files is streamed with its bagit.txt,
+     * bag-info.txt and manifest files.
      */
-    @Test
-    void testDuplicateAddFile() throws IOException, NoSuchAlgorithmException, SpeedBagException {
-        double bagVersion = 1.0;
-        String checksumAlgorithm = "MD5";
-        Map<String, String> bagMetadata = new HashMap<>();
-        SpeedBagIt bag = new SpeedBagIt(bagVersion, checksumAlgorithm, bagMetadata);
+    @ParameterizedTest
+    @MethodSource("bagExportParameters")
+    // SEPARATE_THREAD fails the test even when a read blocks and ignores the interrupt
+    @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    public void testBagExport(String checksumAlgorithm, String manifestAlgorithmName, double bagVersion,
+                              boolean isTagFile) throws IOException, NoSuchAlgorithmException, SpeedBagException {
+        SpeedBagIt bag = new SpeedBagIt(bagVersion, checksumAlgorithm);
+
+        // Tag files are placed outside data/, which is reserved for the payload
+        String directoryName = isTagFile ? "metadata" : "data";
+        String[] fileContents = {"1234, 9876, 3845", "1234, 9876, 38", "1234, 9876"};
+        Map<String, String> dataFiles = new HashMap<>();
+        Map<String, String> tagFiles = new HashMap<>();
+        for (int i = 0; i < fileContents.length; i++) {
+            String path = String.format("%s/file%d.csv", directoryName, i + 1);
+            InputStream fileStream = new ByteArrayInputStream(fileContents[i].getBytes(StandardCharsets.UTF_8));
+            bag.addFile(fileStream, path, MessageDigest.getInstance(checksumAlgorithm), isTagFile);
+            if (isTagFile) {
+                tagFiles.put(path, fileContents[i]);
+            } else {
+                dataFiles.put(path, fileContents[i]);
+            }
+        }
+
+        LocalDate startDate = LocalDate.now();
+        Path bagFilePath = directory.resolve("bag.zip");
+        try (FileOutputStream fos = new FileOutputStream(bagFilePath.toFile())) {
+            IOUtils.copy(bag.stream(), fos);
+        }
+        try (ZipFile zipFile = new ZipFile(bagFilePath.toFile())) {
+            validateBag(zipFile, bagVersion, checksumAlgorithm, manifestAlgorithmName,
+                    dataFiles, tagFiles, startDate);
+        }
+    }
+
+    /**
+     * Tests that when two data files or two tag files are added with the same path,
+     * SpeedBagException is thrown.
+     */
+    @ParameterizedTest
+    @CsvSource({"false, data/data_file1.csv", "true, tag/data_file1.csv"})
+    void testDuplicateAddFile(boolean isTagFile, String path)
+            throws IOException, NoSuchAlgorithmException, SpeedBagException {
+        SpeedBagIt bag = new SpeedBagIt(1.0, "MD5");
 
         String dataFile1 = "1234, 9876, 3845";
         String dataFile2 = "trees, cars, bridges";
         InputStream dataFile1Stream = new ByteArrayInputStream(dataFile1.getBytes(StandardCharsets.UTF_8));
         InputStream dataFile2Stream = new ByteArrayInputStream(dataFile2.getBytes(StandardCharsets.UTF_8));
-        // Check standard data files
-        bag.addFile(dataFile1Stream, "data/data_file1.csv", false);
+        bag.addFile(dataFile1Stream, path, isTagFile);
         assertThrows(SpeedBagException.class,  ()-> {
-            bag.addFile(dataFile2Stream, "data/data_file1.csv", false);
-        });
-        // Check tag files
-        bag.addFile(dataFile1Stream, "tag/data_file1.csv", true);
-        assertThrows(SpeedBagException.class,  ()-> {
-            bag.addFile(dataFile2Stream, "tag/data_file1.csv", true);
+            bag.addFile(dataFile2Stream, path, isTagFile);
         });
     }
 
@@ -477,6 +480,8 @@ public class SpeedBagItTest {
      * receives an IOException rather than silently getting a truncated stream.
      */
     @Test
+    // SEPARATE_THREAD fails the test even when a read blocks and ignores the interrupt
+    @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     public void testStreamPropagatesError() throws IOException, NoSuchAlgorithmException, SpeedBagException {
         SpeedBagIt bag = new SpeedBagIt(1.0, "MD5");
 
@@ -504,6 +509,8 @@ public class SpeedBagItTest {
      * to test the method
      */
     @Test
+    // SEPARATE_THREAD fails the test even when a read blocks and ignores the interrupt
+    @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     public void testStreamPropagatesError2() throws IOException, NoSuchAlgorithmException,
         SpeedBagException {
         SpeedBagIt bag = new SpeedBagIt(1.0, "MD5");
