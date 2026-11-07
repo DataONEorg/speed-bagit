@@ -41,6 +41,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 
@@ -127,11 +129,11 @@ public class SpeedBagItTest {
         bag.addFile(dataFile2Stream, "data/data_file2.csv", false);
 
         // Create and add the tag files
-        String fetchFile = "someURI, somePath";
+        String notesFile = "Collected at the north site";
         String metadataFile = "extra metadata";
-        InputStream fetchFile1Stream = new ByteArrayInputStream(fetchFile.getBytes(StandardCharsets.UTF_8));
+        InputStream notesFileStream = new ByteArrayInputStream(notesFile.getBytes(StandardCharsets.UTF_8));
         InputStream metadataFile2Stream = new ByteArrayInputStream(metadataFile.getBytes(StandardCharsets.UTF_8));
-        bag.addFile(fetchFile1Stream, "fetch.txt", true);
+        bag.addFile(notesFileStream, "notes.txt", true);
         bag.addFile(metadataFile2Stream, "metadata/metadata.csv", true);
 
         return bag;
@@ -268,6 +270,24 @@ public class SpeedBagItTest {
     }
 
     /**
+     * Test helper that decodes percent-encoded percent signs, carriage returns and line feeds
+     * in a manifest path. This test is derived from the behavior outlined in RFC 8493.
+     *
+     * @param manifestPath The path as it is written in a manifest
+     * @return The path of the file
+     */
+    private static String decodeManifestPath(String manifestPath) {
+        Matcher encoded = Pattern.compile("%(25|0[dD]|0[aA])").matcher(manifestPath);
+        StringBuffer path = new StringBuffer();
+        while (encoded.find()) {
+            String character = String.valueOf((char) Integer.parseInt(encoded.group(1), 16));
+            encoded.appendReplacement(path, Matcher.quoteReplacement(character));
+        }
+        encoded.appendTail(path);
+        return path.toString();
+    }
+
+    /**
      * Validates that a manifest lists each expected path once, with the checksum of that path's bag entry.
      *
      * @param entries The bytes of each bag entry, keyed by entry name
@@ -281,8 +301,8 @@ public class SpeedBagItTest {
         for (String line : tagFileLines(entries.get(manifestName))) {
             String[] checksumPath = line.split("\\s+", 2);
             assertEquals(2, checksumPath.length, line);
-            assertNull(checksums.put(checksumPath[1], checksumPath[0]),
-                    manifestName + " lists " + checksumPath[1] + " twice");
+            String path = decodeManifestPath(checksumPath[1]);
+            assertNull(checksums.put(path, checksumPath[0]), manifestName + " lists " + path + " twice");
         }
         assertEquals(expectedPaths, checksums.keySet(), manifestName);
 
@@ -399,7 +419,7 @@ public class SpeedBagItTest {
         expectedDataPaths.add("data/data_file2.csv");
 
         List<String> expectedMetadataPaths = new ArrayList<>();
-        expectedMetadataPaths.add("fetch.txt");
+        expectedMetadataPaths.add("notes.txt");
         expectedMetadataPaths.add("metadata/metadata.csv");
 
         SpeedBagIt bag = getStockBag();
@@ -457,7 +477,7 @@ public class SpeedBagItTest {
 
     /**
      * Tests that when two data files or two tag files are added with the same path,
-     * SpeedBagException is thrown.
+     * InvalidBagPathException is thrown.
      */
     @ParameterizedTest
     @CsvSource({"false, data/data_file1.csv", "true, tag/data_file1.csv"})
@@ -470,9 +490,481 @@ public class SpeedBagItTest {
         InputStream dataFile1Stream = new ByteArrayInputStream(dataFile1.getBytes(StandardCharsets.UTF_8));
         InputStream dataFile2Stream = new ByteArrayInputStream(dataFile2.getBytes(StandardCharsets.UTF_8));
         bag.addFile(dataFile1Stream, path, isTagFile);
-        assertThrows(SpeedBagException.class,  ()-> {
+        assertThrows(InvalidBagPathException.class, () -> {
             bag.addFile(dataFile2Stream, path, isTagFile);
         });
+    }
+
+    /**
+     * Test helper that returns file names in the bag root that the BagIt specification reserves.
+     * Names that start with manifest-* or tagmanifest-* are reserved.
+     *
+     * @return The reserved file names
+     */
+    static String[] reservedFileNames() {
+        return new String[] {"bagit.txt", "bag-info.txt", "fetch.txt", "manifest-md5.txt",
+                "manifest-sha256.txt", "manifest-md5.txt.bak", "tagmanifest-md5.txt",
+                "tagmanifest-sha512.txt", "tagmanifest-sha1.txt.old"};
+    }
+
+    /**
+     * Test helper that returns each reserved file name as a data file and as a tag file.
+     *
+     * @return The reserved file name and isTagFile flag of each case
+     */
+    static Stream<Arguments> reservedFileNameParameters() {
+        List<Arguments> cases = new ArrayList<>();
+        for (String reservedName : reservedFileNames()) {
+            cases.add(Arguments.of(reservedName, false));
+            cases.add(Arguments.of(reservedName, true));
+        }
+        return cases.stream();
+    }
+
+    /**
+     * Test helper that returns each reserved file name under the data directory as a data file,
+     * and under a tag directory and a nested tag directory as a tag file.
+     *
+     * @return The path and isTagFile flag of each case
+     */
+    static Stream<Arguments> reservedNameInSubdirectoryParameters() {
+        List<Arguments> cases = new ArrayList<>();
+        for (String reservedName : reservedFileNames()) {
+            cases.add(Arguments.of("data/" + reservedName, false));
+            cases.add(Arguments.of("metadata/" + reservedName, true));
+            cases.add(Arguments.of("metadata/nested/" + reservedName, true));
+        }
+        return cases.stream();
+    }
+
+    /**
+     * Test helper that adds one file to a BagIt 1.0, MD5 bag, streams the bag and validates the zip.
+     *
+     * @param path The path of the file, relative to the bag root
+     * @param isTagFile True when the file is a tag file
+     */
+    private void addFileAndValidateBag(String path, boolean isTagFile)
+            throws IOException, NoSuchAlgorithmException, SpeedBagException {
+        addFileAndValidateBag(path, isTagFile, "MD5", "md5", "MD5");
+    }
+
+    /**
+     * Test helper that adds one file to a BagIt 1.0 bag with a MessageDigest of the given algorithm,
+     * streams the bag and validates the zip.
+     *
+     * @param path The path of the file, relative to the bag root
+     * @param isTagFile True when the file is a tag file
+     * @param bagAlgorithm The checksum algorithm of the bag
+     * @param manifestAlgorithmName The checksum algorithm name in the manifest file names, e.g. sha256
+     * @param digestAlgorithm The algorithm of the MessageDigest that the file is added with
+     */
+    private void addFileAndValidateBag(String path, boolean isTagFile, String bagAlgorithm,
+                                       String manifestAlgorithmName, String digestAlgorithm)
+            throws IOException, NoSuchAlgorithmException, SpeedBagException {
+        SpeedBagIt bag = new SpeedBagIt(1.0, bagAlgorithm);
+        String contents = "user content";
+        bag.addFile(new ByteArrayInputStream(contents.getBytes(StandardCharsets.UTF_8)), path,
+                MessageDigest.getInstance(digestAlgorithm), isTagFile);
+        Map<String, String> dataFiles = new HashMap<>();
+        Map<String, String> tagFiles = new HashMap<>();
+        if (isTagFile) {
+            tagFiles.put(path, contents);
+        } else {
+            dataFiles.put(path, contents);
+        }
+        streamAndValidateBag(bag, bagAlgorithm, manifestAlgorithmName, dataFiles, tagFiles);
+    }
+
+    /**
+     * Test helper that streams a BagIt 1.0 bag to a zip file and validates the zip.
+     *
+     * @param bag The bag being streamed
+     * @param bagAlgorithm The checksum algorithm of the bag
+     * @param manifestAlgorithmName The checksum algorithm name in the manifest file names, e.g. sha256
+     * @param dataFiles The contents of each data file added to the bag, keyed by path
+     * @param tagFiles The contents of each tag file added to the bag, keyed by path
+     */
+    private void streamAndValidateBag(SpeedBagIt bag, String bagAlgorithm, String manifestAlgorithmName,
+                                      Map<String, String> dataFiles, Map<String, String> tagFiles)
+            throws IOException, NoSuchAlgorithmException {
+        LocalDate startDate = LocalDate.now();
+        Path bagFilePath = directory.resolve("bag.zip");
+        try (FileOutputStream fos = new FileOutputStream(bagFilePath.toFile())) {
+            IOUtils.copy(bag.stream(), fos);
+        }
+        try (ZipFile zipFile = new ZipFile(bagFilePath.toFile())) {
+            validateBag(zipFile, 1.0, bagAlgorithm, manifestAlgorithmName, dataFiles, tagFiles, startDate);
+        }
+    }
+
+    /**
+     * Tests that a file with a reserved name in a subdirectory is added and streamed into a valid bag.
+     */
+    @ParameterizedTest
+    @MethodSource("reservedNameInSubdirectoryParameters")
+    @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    public void testReservedNameInSubdirectory(String path, boolean isTagFile)
+            throws IOException, NoSuchAlgorithmException, SpeedBagException {
+        addFileAndValidateBag(path, isTagFile);
+    }
+
+    /**
+     * Tests that a file whose path is a reserved file name in the bag root is rejected.
+     */
+    @ParameterizedTest
+    @MethodSource("reservedFileNameParameters")
+    public void testAddFileReservedName(String path, boolean isTagFile) throws IOException {
+        SpeedBagIt bag = new SpeedBagIt(1.0, "MD5");
+        InputStream file = new ByteArrayInputStream("contents".getBytes(StandardCharsets.UTF_8));
+        assertThrows(InvalidBagPathException.class, () -> bag.addFile(file, path, isTagFile));
+        assertEquals(0, bag.getDataFiles().size());
+        assertEquals(0, bag.getTagFiles().size());
+    }
+
+    /**
+     * Test helper that returns tag file paths in a directory whose name is a reserved file name.
+     *
+     * @return The tag file paths
+     */
+    static Stream<String> reservedNameAsDirectoryParameters() {
+        List<String> paths = new ArrayList<>();
+        for (String reservedName : reservedFileNames()) {
+            paths.add(reservedName + "/notes.txt");
+            paths.add(reservedName + "/nested/notes.txt");
+        }
+        return paths.stream();
+    }
+
+    /**
+     * Tests that a tag file in a directory whose name is a reserved file name is rejected.
+     */
+    @ParameterizedTest
+    @MethodSource("reservedNameAsDirectoryParameters")
+    public void testAddFileReservedNameAsDirectory(String path) throws IOException {
+        SpeedBagIt bag = new SpeedBagIt(1.0, "MD5");
+        InputStream file = new ByteArrayInputStream("contents".getBytes(StandardCharsets.UTF_8));
+        assertThrows(InvalidBagPathException.class, () -> bag.addFile(file, path, true));
+        assertEquals(0, bag.getTagFiles().size());
+    }
+
+    /**
+     * Tests that a file is rejected when its path is a directory of an added file, or when a parent
+     * directory of its path is an added file.
+     */
+    @ParameterizedTest
+    @CsvSource({
+            "data/a, false, data/a/b.csv, false",
+            "data/a/b.csv, false, data/a, false",
+            "data/a, false, data/a/b/c.csv, false",
+            "data/a/b/c.csv, false, data/a, false",
+            "data/a/b/c.csv, false, data/a/b, false",
+            "metadata, true, metadata/notes.txt, true",
+            "metadata/notes.txt, true, metadata, true",
+            "metadata/notes, true, metadata/notes/nested.txt, true",
+            "metadata/notes/nested.txt, true, metadata/notes, true"})
+    public void testAddFileDirectoryConflict(String firstPath, boolean isFirstTagFile, String secondPath,
+                                             boolean isSecondTagFile)
+            throws IOException, NoSuchAlgorithmException, SpeedBagException {
+        SpeedBagIt bag = new SpeedBagIt(1.0, "MD5");
+        bag.addFile(new ByteArrayInputStream("first".getBytes(StandardCharsets.UTF_8)), firstPath, isFirstTagFile);
+        InputStream secondFile = new ByteArrayInputStream("second".getBytes(StandardCharsets.UTF_8));
+        assertThrows(InvalidBagPathException.class, () -> bag.addFile(secondFile, secondPath, isSecondTagFile));
+        assertEquals(1, bag.getDataFiles().size() + bag.getTagFiles().size());
+    }
+
+    /**
+     * Tests that two files whose paths share a prefix without a directory conflict are added and
+     * streamed into a valid bag.
+     */
+    @ParameterizedTest
+    @CsvSource({
+            "data/a, false, data/ab/c.csv, false",
+            "data/ab/c.csv, false, data/a, false",
+            "data/a.csv, false, data/a/b.csv, false",
+            "data/a/b.csv, false, data/a/b.csv.d/c.csv, false",
+            "metadata, true, metadata2/notes.txt, true",
+            "metadata.txt, true, metadata/notes.txt, true",
+            "data/notes, false, notes/nested.txt, true"})
+    @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    public void testAddFileSharedPrefix(String firstPath, boolean isFirstTagFile, String secondPath,
+                                        boolean isSecondTagFile)
+            throws IOException, NoSuchAlgorithmException, SpeedBagException {
+        SpeedBagIt bag = new SpeedBagIt(1.0, "MD5");
+        Map<String, String> dataFiles = new HashMap<>();
+        Map<String, String> tagFiles = new HashMap<>();
+        // The contents of each file are its path, so the two checksums differ and each is listed in the manifest
+        bag.addFile(new ByteArrayInputStream(firstPath.getBytes(StandardCharsets.UTF_8)), firstPath, isFirstTagFile);
+        bag.addFile(new ByteArrayInputStream(secondPath.getBytes(StandardCharsets.UTF_8)), secondPath, isSecondTagFile);
+        (isFirstTagFile ? tagFiles : dataFiles).put(firstPath, firstPath);
+        (isSecondTagFile ? tagFiles : dataFiles).put(secondPath, secondPath);
+        streamAndValidateBag(bag, "MD5", "md5", dataFiles, tagFiles);
+    }
+
+    /**
+     * Tests that a tag file whose name differs only in case from a reserved name is added and
+     * streamed into a valid bag.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"BagIt.txt", "BAG-INFO.TXT", "Fetch.txt", "Manifest-SHA256.txt",
+            "Manifest-MD5.txt", "TagManifest-MD5.txt"})
+    @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    public void testAddFileReservedNameDifferentCase(String path)
+            throws IOException, NoSuchAlgorithmException, SpeedBagException {
+        addFileAndValidateBag(path, true);
+    }
+
+    /**
+     * Tests that a tag file in the bag root whose name contains a reserved name is added and
+     * streamed into a valid bag.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"manifest.txt", "tagmanifest.txt", "my-manifest-md5.txt", "bagit.txt.old",
+            "bag-info.csv", "fetch.txt.orig"})
+    @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    public void testAddFileSimilarName(String path)
+            throws IOException, NoSuchAlgorithmException, SpeedBagException {
+        addFileAndValidateBag(path, true);
+    }
+
+    /**
+     * Test helper that returns paths that cannot be written to a bag. The idea here
+     * is to build a small catalouge of behavior that shouldn't be supported.
+     *
+     * @return The path and isTagFile flag of each case
+     */
+    static Stream<Arguments> invalidPathParameters() {
+        return Stream.of(
+                Arguments.of(null, false),
+                Arguments.of(null, true),
+                Arguments.of("", false),
+                Arguments.of("", true),
+                Arguments.of("/data/file.csv", false),
+                Arguments.of("/metadata/file.csv", true),
+                Arguments.of("data\\file.csv", false),
+                Arguments.of("metadata\\file.csv", true),
+                Arguments.of("data/../file.csv", false),
+                Arguments.of("data/./file.csv", false),
+                Arguments.of("./data/file.csv", false),
+                Arguments.of("data//file.csv", false),
+                Arguments.of("data/..", false),
+                Arguments.of("..", true),
+                Arguments.of("data/directory/", false),
+                Arguments.of("data/file.csv/", false),
+                Arguments.of("metadata/../data/file.csv", true),
+                Arguments.of("metadata/./notes.txt", true),
+                Arguments.of("metadata//notes.txt", true),
+                Arguments.of("file.csv", false),
+                Arguments.of("metadata/file.csv", false),
+                Arguments.of("datafile.csv", false),
+                Arguments.of("data", false),
+                Arguments.of("data/file.csv", true),
+                Arguments.of("data/nested/file.csv", true),
+                Arguments.of("data", true));
+    }
+
+    /**
+     * Tests that adding a file with a path that cannot be written to a bag throws InvalidBagPathException.
+     */
+    @ParameterizedTest
+    @MethodSource("invalidPathParameters")
+    public void testAddFileInvalidPath(String path, boolean isTagFile) throws IOException {
+        SpeedBagIt bag = new SpeedBagIt(1.0, "MD5");
+        InputStream fileStream = new ByteArrayInputStream("user content".getBytes(StandardCharsets.UTF_8));
+
+        assertThrows(InvalidBagPathException.class, () -> bag.addFile(fileStream, path, isTagFile));
+        assertTrue(bag.getDataFiles().isEmpty());
+        assertTrue(bag.getTagFiles().isEmpty());
+    }
+
+    /**
+     * Tests that a file with a path that is *close* to an invalid path but is still valid. This
+     * is to help find/prevent under/over fitting to the Bagit RFC filepath constraints.
+     */
+    @ParameterizedTest
+    @CsvSource({
+            "data/.keep, false",
+            "data/..hidden.csv, false",
+            "data/file..csv, false",
+            "data/a b.csv, false",
+            "data/é.csv, false",
+            "data/deeply/nested/directory/file.csv, false",
+            "data/data/file.csv, false",
+            "metadata/.hidden, true",
+            "metadata/data/notes.txt, true",
+            "database/notes.txt, true"})
+    @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    public void testAddFileValidPath(String path, boolean isTagFile)
+            throws IOException, NoSuchAlgorithmException, SpeedBagException {
+        addFileAndValidateBag(path, isTagFile);
+    }
+
+    /**
+     * Test helper that returns each pair of different checksum algorithms, for a data file and a tag file.
+     *
+     * @return The bag algorithm, MessageDigest algorithm and isTagFile flag of each case
+     */
+    static Stream<Arguments> otherChecksumAlgorithmParameters() {
+        String[] algorithms = {"MD5", "SHA-1", "SHA-256", "SHA-512"};
+        List<Arguments> cases = new ArrayList<>();
+        for (String bagAlgorithm : algorithms) {
+            for (String digestAlgorithm : algorithms) {
+                if (!bagAlgorithm.equals(digestAlgorithm)) {
+                    cases.add(Arguments.of(bagAlgorithm, digestAlgorithm, false));
+                    cases.add(Arguments.of(bagAlgorithm, digestAlgorithm, true));
+                }
+            }
+        }
+        return cases.stream();
+    }
+
+    /**
+     * Tests that adding a file with a MessageDigest of another checksum algorithm than the bag's
+     * throws SpeedBagException.
+     */
+    @ParameterizedTest
+    @MethodSource("otherChecksumAlgorithmParameters")
+    public void testAddFileOtherChecksumAlgorithm(String bagAlgorithm, String digestAlgorithm, boolean isTagFile)
+            throws IOException, NoSuchAlgorithmException {
+        SpeedBagIt bag = new SpeedBagIt(1.0, bagAlgorithm);
+        InputStream fileStream = new ByteArrayInputStream("user content".getBytes(StandardCharsets.UTF_8));
+        MessageDigest digest = MessageDigest.getInstance(digestAlgorithm);
+        String path = isTagFile ? "metadata/file.csv" : "data/file.csv";
+
+        SpeedBagException exception = assertThrows(SpeedBagException.class,
+                () -> bag.addFile(fileStream, path, digest, isTagFile));
+        assertEquals(SpeedBagException.class, exception.getClass());
+        assertTrue(bag.getDataFiles().isEmpty());
+        assertTrue(bag.getTagFiles().isEmpty());
+    }
+
+    /**
+     * Test helper that returns MessageDigest names that are other spellings of a bag's checksum
+     * algorithm, for a data file and a tag file.
+     *
+     * @return The bag algorithm, manifest algorithm name, MessageDigest algorithm and isTagFile flag of each case
+     */
+    static Stream<Arguments> sameChecksumAlgorithmParameters() {
+        String[][] spellings = {
+                {"MD5", "md5", "md5"},
+                {"SHA-1", "sha1", "SHA1"},
+                {"SHA-256", "sha256", "SHA256"},
+                {"SHA-256", "sha256", "sha-256"},
+                {"SHA-512", "sha512", "SHA512"},
+                {"SHA-512", "sha512", "sha-512"}};
+        List<Arguments> cases = new ArrayList<>();
+        for (String[] spelling : spellings) {
+            cases.add(Arguments.of(spelling[0], spelling[1], spelling[2], false));
+            cases.add(Arguments.of(spelling[0], spelling[1], spelling[2], true));
+        }
+        return cases.stream();
+    }
+
+    /**
+     * Tests that a file added with a MessageDigest whose name is another spelling of the bag's
+     * checksum algorithm is streamed into a valid bag.
+     */
+    @ParameterizedTest
+    @MethodSource("sameChecksumAlgorithmParameters")
+    @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    public void testAddFileSameChecksumAlgorithm(String bagAlgorithm, String manifestAlgorithmName,
+                                                 String digestAlgorithm, boolean isTagFile)
+            throws IOException, NoSuchAlgorithmException, SpeedBagException {
+        String path = isTagFile ? "metadata/file.csv" : "data/file.csv";
+        addFileAndValidateBag(path, isTagFile, bagAlgorithm, manifestAlgorithmName, digestAlgorithm);
+    }
+
+    /**
+     * Test helper that returns paths with characters that RFC 8493 section 2.1.3 does and does not
+     * percent-encode, with the form of each path in a manifest.
+     *
+     * @return The path, isTagFile flag and manifest path of each case
+     */
+    static Stream<Arguments> percentEncodedPathParameters() {
+        return Stream.of(
+                Arguments.of("data/100%.csv", false, "data/100%25.csv"),
+                Arguments.of("data/%start.csv", false, "data/%25start.csv"),
+                Arguments.of("data/end%", false, "data/end%25"),
+                Arguments.of("data/line\nfeed.csv", false, "data/line%0Afeed.csv"),
+                Arguments.of("data/carriage\rreturn.csv", false, "data/carriage%0Dreturn.csv"),
+                Arguments.of("data/windows\r\nline.csv", false, "data/windows%0D%0Aline.csv"),
+                Arguments.of("data/%\r\n.csv", false, "data/%25%0D%0A.csv"),
+                Arguments.of("data/already%0A.csv", false, "data/already%250A.csv"),
+                // Only %, CR and LF are encoded, whic means spaces and a tabs are written as-is
+                Arguments.of("data/a b.csv", false, "data/a b.csv"),
+                Arguments.of("data/tab\t.csv", false, "data/tab\t.csv"),
+                Arguments.of("metadata/50%.txt", true, "metadata/50%25.txt"),
+                Arguments.of("metadata/line\nfeed.txt", true, "metadata/line%0Afeed.txt"));
+    }
+
+    /**
+     * Tests that a percent sign, carriage return or line feed in a path is percent-encoded in the
+     * manifest, that no other character is encoded, and that the bag is valid.
+     */
+    @ParameterizedTest
+    @MethodSource("percentEncodedPathParameters")
+    @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    public void testPercentEncodedPath(String path, boolean isTagFile, String manifestPath)
+            throws IOException, NoSuchAlgorithmException, SpeedBagException {
+        addFileAndValidateBag(path, isTagFile);
+
+        String manifestName = isTagFile ? "tagmanifest-md5.txt" : "manifest-md5.txt";
+        try (ZipFile zipFile = new ZipFile(directory.resolve("bag.zip").toFile())) {
+            String manifest = new String(readEntries(zipFile).get(manifestName), StandardCharsets.UTF_8);
+            assertTrue(manifest.contains(" " + manifestPath + "\n"), manifest);
+        }
+    }
+
+    /**
+     * Test helper that returns pairs of paths that differ only in case.
+     *
+     * @return The path and isTagFile flag of each file in each case
+     */
+    static Stream<Arguments> pathsDifferInCaseParameters() {
+        return Stream.of(
+                Arguments.of("data/results.csv", false, "data/Results.csv", false),
+                Arguments.of("data/dir/a.csv", false, "data/Dir/a.csv", false),
+                Arguments.of("metadata/notes.txt", true, "metadata/Notes.txt", true),
+                Arguments.of("metadata/notes.txt", true, "Metadata/notes.txt", true),
+                Arguments.of("data/a.csv", false, "Data/a.csv", true));
+    }
+
+    /**
+     * Tests that two files whose paths differ only in case are added and streamed into a valid bag.
+     */
+    @ParameterizedTest
+    @MethodSource("pathsDifferInCaseParameters")
+    @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    public void testAddFilePathsDifferInCase(String firstPath, boolean firstIsTagFile,
+                                             String secondPath, boolean secondIsTagFile)
+            throws IOException, NoSuchAlgorithmException, SpeedBagException {
+        SpeedBagIt bag = new SpeedBagIt(1.0, "MD5");
+        Map<String, String> dataFiles = new HashMap<>();
+        Map<String, String> tagFiles = new HashMap<>();
+        String[][] files = {{firstPath, String.valueOf(firstIsTagFile), "1, 2, 3"},
+                {secondPath, String.valueOf(secondIsTagFile), "4, 5, 6"}};
+        for (String[] file : files) {
+            boolean isTagFile = Boolean.parseBoolean(file[1]);
+            bag.addFile(new ByteArrayInputStream(file[2].getBytes(StandardCharsets.UTF_8)), file[0], isTagFile);
+            if (isTagFile) {
+                tagFiles.put(file[0], file[2]);
+            } else {
+                dataFiles.put(file[0], file[2]);
+            }
+        }
+
+        streamAndValidateBag(bag, "MD5", "md5", dataFiles, tagFiles);
+    }
+
+    /**
+     * Tests that a tag file whose first directory differs only in case from data/ is added and
+     * streamed into a valid bag.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"Data/notes.txt", "DATA/nested/notes.txt", "Data"})
+    @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    public void testAddFileTagFileInPayloadDirectoryDifferentCase(String path)
+            throws IOException, NoSuchAlgorithmException, SpeedBagException {
+        addFileAndValidateBag(path, true);
     }
 
     /**

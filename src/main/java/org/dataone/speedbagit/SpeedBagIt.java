@@ -36,13 +36,16 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -60,6 +63,10 @@ import org.apache.commons.logging.LogFactory;
  */
 public class SpeedBagIt {
     private final static Log logger = LogFactory.getLog(SpeedBagIt.class);
+    // Regex that matches every file in the bag root that starts with manifest- or tagmanifest-.
+    private final static Pattern MANIFEST_FILE_NAME = Pattern.compile("(tag)?manifest-[^/]*");
+    // The directory that contains the payload files
+    private final static String PAYLOAD_DIRECTORY = "data";
 
     // The properties file holding string constants
     private Properties properties;
@@ -74,10 +81,15 @@ public class SpeedBagIt {
     // Map of key-values that go in the bagit.txt file
     public Map<String, String> bagitMetadata;
 
+    // Every directory that contains an added file, e.g. data and data/nested for data/nested/a.csv
+    private HashSet<String> directoryPaths;
+
     // Containers for keeping track of tag & data files, keyed off of
     // their relative file path
     private HashMap<String, SpeedFile> dataFiles;
     private HashMap<String, SpeedFile> tagFiles;
+    // The path of each data and tag file, keyed by the path in lower case
+    private HashMap<String, String> pathsByLowerCase;
     
     // An ExecutorService to run the piped stream in another thread
     private static ExecutorService executor = null;
@@ -104,6 +116,8 @@ public class SpeedBagIt {
         this.checksumAlgorithm = checksumAlgorithm;
         this.dataFiles = new HashMap<>();
         this.tagFiles = new HashMap<>();
+        this.pathsByLowerCase = new HashMap<>();
+        this.directoryPaths = new HashSet<>();
         this.bagitMetadata = bagitMetadata;
         this.dataManifestFile = new HashMap<> ();
         this.tagManifestFile = new HashMap<> ();
@@ -131,37 +145,178 @@ public class SpeedBagIt {
      * @param bagPath:   The path, relative to the bag root where the file belongs
      * @param checksum:  A MessageDigest object that will hold the checksum
      * @param isTagFile: Boolean set to True when the file is a tag file
+     * @throws InvalidBagPathException Thrown when the path cannot be written to the bag, starts with a name
+     *                                 reserved by the BagIt specification, was already added, or conflicts
+     *                                 with the directory of another file
+     * @throws SpeedBagException Thrown when the checksum algorithm differs from the bag's algorithm
      */
     public void addFile(InputStream file, String bagPath, MessageDigest checksum, boolean isTagFile)
             throws SpeedBagException {
         logger.debug(String.format("Adding %s to the bag", bagPath));
-        // Check to see if there's a path conflict
-        if (this.hasPathCollisions(bagPath, isTagFile)) {
-            throw new SpeedBagException(
-                    String.format("The tag file with path %s conflicts with another file.", bagPath)
+        this.validatePath(bagPath, isTagFile);
+        // A reserved name used as a directory, e.g. bagit.txt/notes.txt, also prevents the reserved file
+        // from being extracted
+        String firstSegment = bagPath.split("/", -1)[0];
+        if (this.isReservedFileName(firstSegment)) {
+            throw new InvalidBagPathException(String.format(
+                    "The path %s starts with %s, a file name reserved by the BagIt specification.",
+                    bagPath, firstSegment));
+        }
+        if (this.dataFiles.containsKey(bagPath) || this.tagFiles.containsKey(bagPath)) {
+            throw new InvalidBagPathException(
+                    String.format("The file with path %s conflicts with another file.", bagPath)
             );
         }
-        SpeedFile newFile = new SpeedFile(new SpeedStream(file, checksum), bagPath, isTagFile);
-            if (isTagFile) {
-                this.tagFiles.put(bagPath, newFile);
-            } else {
-                this.dataFiles.put(bagPath, newFile);
-            }
+        this.validateNoDirectoryConflict(bagPath);
+        if (!manifestAlgorithmName(checksum.getAlgorithm()).equals(manifestAlgorithmName(this.checksumAlgorithm))) {
+            throw new SpeedBagException(
+                    String.format("The %s checksum algorithm of %s differs from the bag's checksum algorithm %s.",
+                            checksum.getAlgorithm(), bagPath, this.checksumAlgorithm)
+            );
         }
 
-        /**
-         * Checks whether two paths collide, based on their file type (tag vs data file).
-         *
-         * @param path:  Path being checked against the previously added files
-         * @param isTagFile: A flag whether the file is a data file or not (otherwise it will be a tag)
-         */
-        private boolean hasPathCollisions(String path, boolean isTagFile) {
-            if (isTagFile) {
-                return this.tagFiles.containsKey(path);
-            } else {
-                return this.dataFiles.containsKey(path);
+        String lowerCasePath = bagPath.toLowerCase(Locale.ROOT);
+        if (this.isReservedFileName(firstSegment.toLowerCase(Locale.ROOT))) {
+            logger.warn(String.format("The path %s starts with %s, which differs only in case from a file name "
+                    + "reserved by the BagIt specification. On a case-insensitive file system, extracting the bag "
+                    + "can replace the reserved file, and a validator can read this file in its place.",
+                    bagPath, firstSegment));
+        }
+        if (isTagFile && firstSegment.equalsIgnoreCase(PAYLOAD_DIRECTORY)) {
+            logger.warn(String.format("The tag file %s differs only in case from a path in the %s/ directory. "
+                    + "On a case-insensitive file system, extracting the bag places it in the %s/ directory, "
+                    + "where it is a payload file that the payload manifest does not list.",
+                    bagPath, PAYLOAD_DIRECTORY, PAYLOAD_DIRECTORY));
+        }
+        String pathWithOtherCase = this.pathsByLowerCase.get(lowerCasePath);
+        if (pathWithOtherCase != null) {
+            logger.warn(String.format("The path %s differs only in case from the path %s. On a "
+                    + "case-insensitive file system, extracting the bag replaces one file with the other.",
+                    bagPath, pathWithOtherCase));
+        }
+
+        SpeedFile newFile = new SpeedFile(new SpeedStream(file, checksum), bagPath, isTagFile);
+        if (isTagFile) {
+            this.tagFiles.put(bagPath, newFile);
+        } else {
+            this.dataFiles.put(bagPath, newFile);
+        }
+        this.pathsByLowerCase.put(lowerCasePath, bagPath);
+        this.directoryPaths.addAll(parentDirectories(bagPath));
+    }
+
+    /**
+     * Checks that a path can be written to the bag as a data file or a tag file.
+     *
+     * @param path The path being checked, relative to the bag root
+     * @param isTagFile True when the file is a tag file
+     * @throws InvalidBagPathException Thrown when the path is empty or absolute, contains a backslash or
+     *                                 an empty, "." or ".." segment, is a data file outside data/, or is
+     *                                 a tag file in data/
+     */
+    private void validatePath(String path, boolean isTagFile) throws InvalidBagPathException {
+        if (path == null || path.isEmpty()) {
+            throw new InvalidBagPathException("The path of the file is empty.");
+        }
+        if (path.startsWith("/")) {
+            throw new InvalidBagPathException(String.format(
+                    "The path %s is absolute. Paths in a bag are relative to the bag root.", path));
+        }
+        if (path.contains("\\")) {
+            throw new InvalidBagPathException(String.format(
+                    "The path %s contains a backslash. Paths in a bag use / as the separator.", path));
+        }
+        // An empty segment also rejects a path that ends with / and so names a directory
+        for (String segment : path.split("/", -1)) {
+            if (segment.isEmpty() || segment.equals(".") || segment.equals("..")) {
+                throw new InvalidBagPathException(String.format(
+                        "The path %s contains an empty, . or .. segment.", path));
             }
         }
+        boolean isInPayloadDirectory = path.startsWith(PAYLOAD_DIRECTORY + "/");
+        if (!isTagFile && !isInPayloadDirectory) {
+            throw new InvalidBagPathException(String.format(
+                    "The data file %s is outside the %s/ directory.", path, PAYLOAD_DIRECTORY));
+        }
+        // A tag file named data would be a file with the same path as the payload directory
+        if (isTagFile && (isInPayloadDirectory || path.equals(PAYLOAD_DIRECTORY))) {
+            throw new InvalidBagPathException(String.format(
+                    "The tag file %s is in the %s/ directory, which contains only data files.",
+                    path, PAYLOAD_DIRECTORY));
+        }
+    }
+
+    /**
+     * Converts a checksum algorithm name to the form used in manifest file names, as RFC 8493
+     * section 2.4 specifies.
+     *
+     * @param algorithm The checksum algorithm name, e.g. SHA-256
+     * @return The name in lower case without non-alphanumeric characters, e.g. sha256
+     */
+    private static String manifestAlgorithmName(String algorithm) {
+        return algorithm.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+    }
+
+    /**
+     * Percent-encodes the percent signs, carriage returns and line feeds in a path, as RFC 8493
+     * section 2.1.3 requires for a path in a manifest.
+     *
+     * @param path The path of a file, relative to the bag root
+     * @return The path as it is written in a manifest
+     */
+    private static String encodeManifestPath(String path) {
+        // The percent signs are encoded first, so the % of %0D and %0A is not encoded again
+        return path.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A");
+    }
+
+    /**
+     * Checks whether a name is a file name in the bag root that the BagIt specification reserves.
+     *
+     * @param name The name being checked
+     * @return True when the name is bagit.txt, bag-info.txt, fetch.txt, or starts with manifest- or
+     *         tagmanifest-
+     */
+    private boolean isReservedFileName(String name) {
+        return name.equals(this.properties.getProperty("bagit.file.name"))
+                || name.equals(this.properties.getProperty("bag.info.file.name"))
+                || name.equals(this.properties.getProperty("fetch.file.name"))
+                || MANIFEST_FILE_NAME.matcher(name).matches();
+    }
+
+    /**
+     * Checks that a path is not a directory of an added file, and that no parent directory of the path
+     * is an added file. A zip with both cannot be extracted.
+     *
+     * @param path The path being checked, relative to the bag root
+     * @throws InvalidBagPathException Thrown when the path is a directory of an added file, or a parent
+     *                                 directory of the path is an added file
+     */
+    private void validateNoDirectoryConflict(String path) throws InvalidBagPathException {
+        if (this.directoryPaths.contains(path)) {
+            throw new InvalidBagPathException(String.format(
+                    "The path %s is a directory that contains another file in the bag.", path));
+        }
+        for (String directory : parentDirectories(path)) {
+            if (this.dataFiles.containsKey(directory) || this.tagFiles.containsKey(directory)) {
+                throw new InvalidBagPathException(String.format(
+                        "The path %s is inside %s, which is a file in the bag.", path, directory));
+            }
+        }
+    }
+
+    /**
+     * Returns the parent directories of a path.
+     *
+     * @param path The path of a file, relative to the bag root
+     * @return The parent directories, e.g. data and data/nested for data/nested/a.csv
+     */
+    private static Set<String> parentDirectories(String path) {
+        Set<String> directories = new HashSet<>();
+        for (int i = path.indexOf('/'); i != -1; i = path.indexOf('/', i + 1)) {
+            directories.add(path.substring(0, i));
+        }
+        return directories;
+    }
 
 
     /**
@@ -170,6 +325,8 @@ public class SpeedBagIt {
      * @param file:      The stream representing a file or data that will be placed in the bag
      * @param bagPath:      The path, relative to the bag root where the file belongs
      * @param isTagFile: Boolean set to True when the file is a tag file
+     * @throws InvalidBagPathException Thrown when the path is reserved by the BagIt specification
+     *                                 or was already added
      */
     public void addFile(InputStream file, String bagPath, boolean isTagFile) throws NoSuchAlgorithmException, SpeedBagException {
         logger.debug(String.format("Adding %s to the bag", bagPath));
@@ -237,26 +394,27 @@ public class SpeedBagIt {
     /**
      * Writes a line to the tag manifest file. The line conforms to the
      * <path> <checksum> format specified by BagIt.
+     * The path is percent-encoded.
      *
      * @param path:     The path the the file, relative to the bag root
      * @param checksum: The checksum of the file
      */
     public void writeToTagManifest(String path, String checksum) {
         logger.debug(String.format("Writing line to the tag-manifest %s %s", path, checksum));
-        // Check to see if it doesn't exist (so we don't write null)
-        tagManifestFile.put(checksum, path);
+        tagManifestFile.put(checksum, encodeManifestPath(path));
     }
 
     /**
      * Writes a line to the manifest file describing the data files. The line conforms to the
      * "<path> <checksum>" format specified by BagIt.
+     * The path is percent-encoded.
      *
      * @param path:     The path the the file, relative to the bag root
      * @param checksum: The checksum of the file
      */
     public void writeToDataManifest(String path, String checksum) {
         logger.debug(String.format("Writing line to the data manifest %s %s", path, checksum));
-        dataManifestFile.put(checksum, path);
+        dataManifestFile.put(checksum, encodeManifestPath(path));
     }
 
     /**
@@ -275,6 +433,28 @@ public class SpeedBagIt {
             IOUtils.copy(fileStream, zos);
         } finally {
             zos.closeEntry();
+        }
+    }
+
+    /**
+     * Writes a tag file that SpeedBagIt generates to the zip and adds its checksum to the tag manifest.
+     *
+     * @param zos The output stream that the file is written to
+     * @param path The path of the tag file, relative to the bag root
+     * @param contents The contents of the tag file
+     * @throws IOException Thrown when the file cannot be written to the output stream
+     * @throws NoSuchAlgorithmException Thrown when an unsupported checksum algorithm is used
+     */
+    private void writeGeneratedTagFile(ZipOutputStream zos, String path, String contents)
+            throws IOException, NoSuchAlgorithmException {
+        InputStream contentStream = new ByteArrayInputStream(contents.getBytes(StandardCharsets.UTF_8));
+        SpeedFile generatedFile = new SpeedFile(new SpeedStream(contentStream,
+                MessageDigest.getInstance(checksumAlgorithm)), path, true);
+        try {
+            streamFile(zos, generatedFile);
+            writeToTagManifest(path, generatedFile.getStream().getChecksum());
+        } finally {
+            generatedFile.getStream().close();
         }
     }
 
@@ -311,29 +491,9 @@ public class SpeedBagIt {
                                 streamingFile.getStream().close();
                             }
                         }
-                        String payloadOxum =  String.format("%s.%s",totalSize, dataFiles.size());
-                        // Generate and add the bagit.txt file
-                        InputStream bagTextStream = new ByteArrayInputStream(generateBagitTxt().getBytes(StandardCharsets.UTF_8));
-                        String bagitFileName = properties.getProperty("bagit.file.name");
-                        addFile(bagTextStream, bagitFileName, MessageDigest.getInstance(checksumAlgorithm), true);
-
-
-                        // Generate and add the bag-info.txt file
-                        String bagInfoFile = generateBagInfoTxt(payloadOxum, totalSize);
-                        InputStream fileStream = new ByteArrayInputStream(bagInfoFile.getBytes(StandardCharsets.UTF_8));
-                        String bagitInfoFileName = properties.getProperty("bag.info.file.name");
-                        addFile(fileStream, bagitInfoFileName, MessageDigest.getInstance(checksumAlgorithm), true);
-
-                        // BagIt requires checksum filenames to be lower cased and without dashes
-                        String sanitizedChecksum = checksumAlgorithm.toLowerCase();
-                        sanitizedChecksum = sanitizedChecksum.replaceAll("[^A-Za-z0-9]", "");
-                        // Generate and add the data manifest file
-                        String dataManifest = bagFileToString(dataManifestFile);
-                        String fileName = String.format("manifest-%s.txt", sanitizedChecksum);
-                        fileStream = new ByteArrayInputStream(dataManifest.getBytes(StandardCharsets.UTF_8));
-                        addFile(fileStream, fileName, MessageDigest.getInstance(checksumAlgorithm), true);
-
-                        // Write all the tag files
+                        // The tag files are written before the generated files. When a tag file name
+                        // differs only in case from a generated file name, extraction on a case-insensitive
+                        // file system writes the generated file last, so the generated contents are kept.
                         for (SpeedFile streamingFile : tagFiles.values()) {
                             try {
                                 streamFile(zos, streamingFile);
@@ -344,9 +504,18 @@ public class SpeedBagIt {
                             }
                         }
 
+                        String payloadOxum =  String.format("%s.%s",totalSize, dataFiles.size());
+                        writeGeneratedTagFile(zos, properties.getProperty("bagit.file.name"), generateBagitTxt());
+                        writeGeneratedTagFile(zos, properties.getProperty("bag.info.file.name"),
+                                generateBagInfoTxt(payloadOxum, totalSize));
+
+                        String sanitizedChecksum = manifestAlgorithmName(checksumAlgorithm);
+                        String fileName = String.format("manifest-%s.txt", sanitizedChecksum);
+                        writeGeneratedTagFile(zos, fileName, bagFileToString(dataManifestFile));
+
                         // Create the tag manifest and stream it
                         String tagMannifest = bagFileToString(tagManifestFile);
-                        fileStream = new ByteArrayInputStream(tagMannifest.getBytes(StandardCharsets.UTF_8));
+                        InputStream fileStream = new ByteArrayInputStream(tagMannifest.getBytes(StandardCharsets.UTF_8));
                         fileName = String.format("tagmanifest-%s.txt", sanitizedChecksum);
                         SpeedFile tagManifestStreamFile = new SpeedFile(new SpeedStream(fileStream,
                                 MessageDigest.getInstance(checksumAlgorithm)), fileName, true);
