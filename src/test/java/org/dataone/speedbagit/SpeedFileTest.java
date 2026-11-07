@@ -29,28 +29,26 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 public class SpeedFileTest {
 
     /**
-     * Test that getPath works
+     * Test that getPath returns the path of a data file or a tag file.
      */
-    @Test
-    public void testGetPath()
+    @ParameterizedTest
+    @CsvSource({"data/my_csv_file.csv, false", "metadata/my_csv_file.csv, true"})
+    public void testGetPath(String targetPath, boolean tagFile) throws NoSuchAlgorithmException
     {
         String testCsvFile = "1234, 56789";
-        String targetPath = "data/my_csv_file.csv";
         InputStream fileStream = new ByteArrayInputStream(testCsvFile.getBytes(StandardCharsets.UTF_8));
-        try {
-            SpeedStream speedStream = new SpeedStream(fileStream, MessageDigest.getInstance("MD5"));
-            SpeedFile testFile = new SpeedFile(speedStream, targetPath, false);
-            String path = testFile.getPath();
-            assertEquals(path, targetPath);
-        } catch (NoSuchAlgorithmException e) {
-            fail();
-        }
+        SpeedStream speedStream = new SpeedStream(fileStream, MessageDigest.getInstance("MD5"));
+        SpeedFile testFile = new SpeedFile(speedStream, targetPath, tagFile);
+        assertEquals(targetPath, testFile.getPath());
     }
 
     /**
@@ -58,38 +56,28 @@ public class SpeedFileTest {
      * constructor
      */
     @Test
-    public void testGetStream()
+    public void testGetStream() throws NoSuchAlgorithmException
     {
         String testCsvFile = "1234, 56789";
         String targetPath = "data/my_csv_file.csv";
         InputStream fileStream = new ByteArrayInputStream(testCsvFile.getBytes(StandardCharsets.UTF_8));
-        try {
-            SpeedStream speedStream = new SpeedStream(fileStream, MessageDigest.getInstance("MD5"));
-            SpeedFile testFile = new SpeedFile(speedStream, targetPath, false);
-            SpeedStream stream = testFile.getStream();
-            assertEquals(stream, speedStream);
-        } catch (NoSuchAlgorithmException e) {
-            fail();
-        }
+        SpeedStream speedStream = new SpeedStream(fileStream, MessageDigest.getInstance("MD5"));
+        SpeedFile testFile = new SpeedFile(speedStream, targetPath, false);
+        assertSame(speedStream, testFile.getStream());
     }
 
     /**
      * Test isTagFile is returning the correct property
      */
-    @Test
-    public void testIsTagFile()
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    public void testIsTagFile(boolean tagFile) throws NoSuchAlgorithmException
     {
         String testCsvFile = "1234, 56789";
         String targetPath = "data/my_csv_file.csv";
-        boolean tagFile = false;
         InputStream fileStream = new ByteArrayInputStream(testCsvFile.getBytes(StandardCharsets.UTF_8));
-        try {
-            SpeedStream speedStream = new SpeedStream(fileStream, MessageDigest.getInstance("MD5"));
-            SpeedFile testFile = new SpeedFile(speedStream, targetPath, tagFile);
-            boolean isTag = testFile.isTagFile();
-            assertEquals(isTag, tagFile);
-        } catch (NoSuchAlgorithmException e) {
-            fail();
-        }
+        SpeedStream speedStream = new SpeedStream(fileStream, MessageDigest.getInstance("MD5"));
+        SpeedFile testFile = new SpeedFile(speedStream, targetPath, tagFile);
+        assertEquals(tagFile, testFile.isTagFile());
     }
 }
