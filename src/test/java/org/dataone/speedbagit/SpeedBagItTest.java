@@ -38,9 +38,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -1022,5 +1024,169 @@ public class SpeedBagItTest {
             IOUtils.copyLarge(bagStream, outputStream);
         });
     }
-}
 
+    /**
+     * Tests that each manifest line ends in a line feed when the platform line separator is different.
+     *
+     * @param lineSeparator The value of the line.separator system property during the test
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"\r\n", "\r"})
+    public void testBagFileToStringLineFeed(String lineSeparator) {
+        Map<String, String> manifest = new LinkedHashMap<>();
+        manifest.put("abc", "data/a.csv");
+        manifest.put("def", "data/b.csv");
+        String originalLineSeparator = System.getProperty("line.separator");
+        System.setProperty("line.separator", lineSeparator);
+        try {
+            assertEquals("abc data/a.csv\ndef data/b.csv\n", SpeedBagIt.bagFileToString(manifest));
+        } finally {
+            System.setProperty("line.separator", originalLineSeparator);
+        }
+    }
+
+    /**
+     * Test helper that reads a bag stream to the end.
+     *
+     * @param bag The bag that is streamed
+     * @return The bytes of the bag
+     * @throws IOException Thrown when the bag could not be streamed
+     * @throws NoSuchAlgorithmException Thrown when the bag's checksum algorithm is unsupported
+     */
+    private static byte[] readBag(SpeedBagIt bag) throws IOException, NoSuchAlgorithmException {
+        try (InputStream bagStream = bag.stream()) {
+            return IOUtils.toByteArray(bagStream);
+        }
+    }
+
+    /**
+     * Tests that a bag cannot be streamed a second time.
+     */
+    @Test
+    @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    public void testStreamTwice() throws IOException, NoSuchAlgorithmException, SpeedBagException {
+        SpeedBagIt bag = new SpeedBagIt(1.0, "MD5");
+        bag.addFile(new ByteArrayInputStream("contents".getBytes(StandardCharsets.UTF_8)), "data/a.csv", false);
+        readBag(bag);
+
+        assertThrows(IllegalStateException.class, bag::stream);
+    }
+
+    /**
+     * Test helper that returns a stream which records when it is closed.
+     *
+     * @param contents The bytes that the stream returns
+     * @param isClosed Set to true when the stream is closed
+     * @return The stream
+     */
+    private static InputStream closeRecordingStream(byte[] contents, AtomicBoolean isClosed) {
+        return new ByteArrayInputStream(contents) {
+            @Override
+            public void close() throws IOException {
+                isClosed.set(true);
+                super.close();
+            }
+        };
+    }
+
+    /**
+     * Test helper that returns a stream which throws on every read and records when it is closed.
+     *
+     * @param isClosed Set to true when the stream is closed
+     * @return The stream
+     */
+    private static InputStream failingStream(AtomicBoolean isClosed) {
+        return new InputStream() {
+            @Override
+            public int read() throws IOException {
+                throw new IOException("simulated read failure");
+            }
+
+            @Override
+            public void close() {
+                isClosed.set(true);
+            }
+        };
+    }
+
+    /**
+     * Tests that the input stream of every file is closed when streaming fails, including the files
+     * that were not written.
+     *
+     * @param isFailingFileTagFile True when the file whose stream fails is a tag file
+     */
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    public void testStreamFailureClosesInputStreams(boolean isFailingFileTagFile)
+            throws IOException, NoSuchAlgorithmException, SpeedBagException {
+        SpeedBagIt bag = new SpeedBagIt(1.0, "MD5");
+        Map<String, AtomicBoolean> isClosedByPath = new HashMap<>();
+        for (int i = 0; i < 3; i++) {
+            String dataPath = "data/file" + i + ".csv";
+            String tagPath = "metadata/file" + i + ".txt";
+            isClosedByPath.put(dataPath, new AtomicBoolean());
+            isClosedByPath.put(tagPath, new AtomicBoolean());
+            byte[] contents = ("contents " + i).getBytes(StandardCharsets.UTF_8);
+            bag.addFile(closeRecordingStream(contents, isClosedByPath.get(dataPath)), dataPath, false);
+            bag.addFile(closeRecordingStream(contents, isClosedByPath.get(tagPath)), tagPath, true);
+        }
+        String failingPath = isFailingFileTagFile ? "metadata/failing.txt" : "data/failing.csv";
+        isClosedByPath.put(failingPath, new AtomicBoolean());
+        bag.addFile(failingStream(isClosedByPath.get(failingPath)), failingPath, isFailingFileTagFile);
+
+        assertThrows(IOException.class, () -> readBag(bag));
+        for (Map.Entry<String, AtomicBoolean> entry : isClosedByPath.entrySet()) {
+            assertTrue(entry.getValue().get(), "The input stream of " + entry.getKey() + " is open");
+        }
+    }
+
+    /**
+     * Tests that a bag whose streaming fails has no zip end of central directory record, so the
+     * partial bag cannot be read as a complete zip.
+     */
+    @Test
+    @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    public void testStreamFailureWritesNoCentralDirectory()
+            throws IOException, NoSuchAlgorithmException, SpeedBagException {
+        SpeedBagIt bag = new SpeedBagIt(1.0, "MD5");
+        bag.addFile(new ByteArrayInputStream("contents".getBytes(StandardCharsets.UTF_8)), "metadata/a.txt", true);
+        bag.addFile(failingStream(new AtomicBoolean()), "data/failing.csv", false);
+
+        ByteArrayOutputStream partialBag = new ByteArrayOutputStream();
+        InputStream bagStream = bag.stream();
+        assertThrows(IOException.class, () -> IOUtils.copy(bagStream, partialBag));
+
+        byte[] endOfCentralDirectory = {0x50, 0x4b, 0x05, 0x06};
+        byte[] bytes = partialBag.toByteArray();
+        for (int i = 0; i + endOfCentralDirectory.length <= bytes.length; i++) {
+            assertFalse(Arrays.equals(endOfCentralDirectory, Arrays.copyOfRange(bytes, i, i + 4)),
+                    "The partial bag contains an end of central directory record at byte " + i);
+        }
+    }
+
+    /**
+     * Tests that when an input stream throws an unchecked exception from close(), the reader receives an
+     * IOException caused by that exception and every other input stream is closed.
+     */
+    @Test
+    @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    public void testStreamFailureWithUncheckedCloseException()
+            throws IOException, NoSuchAlgorithmException, SpeedBagException {
+        SpeedBagIt bag = new SpeedBagIt(1.0, "MD5");
+        InputStream closeFailingStream = new ByteArrayInputStream("contents".getBytes(StandardCharsets.UTF_8)) {
+            @Override
+            public void close() {
+                throw new IllegalStateException("simulated close failure");
+            }
+        };
+        bag.addFile(closeFailingStream, "data/a.csv", false);
+        AtomicBoolean isTagFileClosed = new AtomicBoolean();
+        byte[] contents = "tag contents".getBytes(StandardCharsets.UTF_8);
+        bag.addFile(closeRecordingStream(contents, isTagFileClosed), "metadata/notes.txt", true);
+
+        IOException exception = assertThrows(IOException.class, () -> readBag(bag));
+        assertInstanceOf(IllegalStateException.class, exception.getCause());
+        assertTrue(isTagFileClosed.get(), "The input stream of metadata/notes.txt is open");
+    }
+}

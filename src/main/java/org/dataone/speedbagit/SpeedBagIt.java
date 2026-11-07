@@ -34,6 +34,7 @@ import java.security.NoSuchAlgorithmException;
 import java.text.SimpleDateFormat;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -90,6 +91,8 @@ public class SpeedBagIt {
     private HashMap<String, SpeedFile> tagFiles;
     // The path of each data and tag file, keyed by the path in lower case
     private HashMap<String, String> pathsByLowerCase;
+    // True after stream() is called
+    private boolean isStreamed;
     
     // An ExecutorService to run the piped stream in another thread
     private static ExecutorService executor = null;
@@ -460,13 +463,18 @@ public class SpeedBagIt {
 
     /**
      * Writes the files to a stream under the BagIt specification. The manifest, bagit.txt,
-     * and bag.info are generated inside.
+     * and bag.info are generated inside. A bag can be streamed only once.
      *
      * @throws IOException Throws when something went wrong with streaming the bag
      * @throws NoSuchAlgorithmException Thrown when an unsupported checksum algorithm is used
+     * @throws IllegalStateException Thrown when the bag was already streamed
      */
     public InputStream stream()
             throws IOException, NoSuchAlgorithmException {
+        if (this.isStreamed) {
+            throw new IllegalStateException("The bag was already streamed.");
+        }
+        this.isStreamed = true;
         PipedOutputStream ps = new PipedOutputStream();
         PipedInputStream is = new PipedInputStream(ps);
         ZipOutputStream zos = new ZipOutputStream(ps);
@@ -475,6 +483,7 @@ public class SpeedBagIt {
         executor.execute(
             new Runnable() {
                 public void run() {
+                    boolean isWritten = false;
                     try {
                         String timeStamp = new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss").format(new Date());
                         logger.info(String.format("Streaming bag at %s", timeStamp));
@@ -525,6 +534,7 @@ public class SpeedBagIt {
                             tagManifestStreamFile.getStream().close();
                         }
                         zos.close();
+                        isWritten = true;
                         timeStamp = new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss").format(new Date());
                         logger.info(String.format("Finished streaming bag at %s", timeStamp));
 
@@ -532,8 +542,16 @@ public class SpeedBagIt {
                         logger.error("Error streaming bag", e);
                         failure.set(e);
                     } finally {
-                        try { zos.close(); } catch (IOException ignored) {}
-                        try { ps.close(); } catch (IOException ignored) {}
+                        if (!isWritten) {
+                            try {
+                                closeFileStreams(dataFiles.values());
+                                closeFileStreams(tagFiles.values());
+                            } finally {
+                                // Only the pipe is closed. Closing zos would write the zip's central directory,
+                                // and the reader would receive a well-formed zip that is missing files.
+                                try { ps.close(); } catch (IOException ignored) {}
+                            }
+                        }
                     }
                 }
             });
@@ -563,7 +581,23 @@ public class SpeedBagIt {
     }
 
     /**
-     * Returns the number of data files in the bag
+     * Closes the input stream of each file.
+     *
+     * @param files The files whose input streams are closed
+     */
+    private static void closeFileStreams(Collection<SpeedFile> files) {
+        for (SpeedFile file : files) {
+            try {
+                file.getStream().close();
+            } catch (Exception e) {
+                // An unchecked exception from one stream would leave the remaining streams open
+                logger.warn(String.format("The input stream of %s could not be closed.", file.getPath()), e);
+            }
+        }
+    }
+
+    /**
+     * Returns the number of data files in the bag.
      *
      * @return The number of data files
      */
@@ -588,6 +622,12 @@ public class SpeedBagIt {
         return this.dataFiles;
     }
 
+    /**
+     * Converts a manifest map to the contents of a manifest file, with each line ending in a line feed.
+     *
+     * @param mapFile The manifest entries, keyed by checksum
+     * @return The manifest file contents
+     */
     public static String bagFileToString(Map<String, String> mapFile) {
         StringBuilder builder = new StringBuilder();
         for(Map.Entry<String, String> e : mapFile.entrySet())
@@ -597,7 +637,7 @@ public class SpeedBagIt {
             builder.append(key);
             builder.append(' ');
             builder.append(value);
-            builder.append(System.getProperty("line.separator"));
+            builder.append('\n');
         }
         return builder.toString();
     }
